@@ -10,9 +10,24 @@ router = APIRouter()
 @router.get("/ca")
 async def get_ca_cert(download: bool = False):
     """Get CA certificate for node enrollment"""
+    from app.hysteria2_server import Hysteria2Server
+    
     cert_path = Path(settings.hysteria2_cert_path)
+    
+    # Generate certificate if it doesn't exist or is empty
+    if not cert_path.exists() or cert_path.stat().st_size == 0:
+        print("CA certificate missing or empty, generating...")
+        h2_server = Hysteria2Server()
+        await h2_server._generate_certs()
+        cert_path = Path(settings.hysteria2_cert_path)
+    
     if not cert_path.exists():
-        raise HTTPException(status_code=404, detail="CA certificate not found")
+        raise HTTPException(status_code=500, detail="Failed to generate CA certificate")
+    
+    # Check if file is empty
+    cert_content = cert_path.read_text()
+    if not cert_content or not cert_content.strip():
+        raise HTTPException(status_code=500, detail="CA certificate is empty")
     
     # If download parameter is true, return as file download
     if download:
@@ -24,7 +39,6 @@ async def get_ca_cert(download: bool = False):
         )
     
     # Otherwise return as text (for display/copy in UI)
-    cert_content = cert_path.read_text()
     return Response(content=cert_content, media_type="text/plain")
 
 
