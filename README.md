@@ -24,17 +24,22 @@ cp .env.example .env
 # Edit .env with your settings
 ```
 
-3. Start services:
+3. Install CLI tools:
+```bash
+sudo bash cli/install_cli.sh
+```
+
+4. Start services:
 ```bash
 docker compose up -d
 ```
 
-4. Create admin user:
+5. Create admin user:
 ```bash
 smite admin create
 ```
 
-5. Access the web interface at `http://localhost:8000`
+6. Access the web interface at `http://localhost:8000`
 
 ## Node Installation
 

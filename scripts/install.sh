@@ -116,8 +116,15 @@ if [ ! -f "panel/certs/ca.crt" ]; then
 fi
 
 # Install CLI
+echo ""
+echo "Installing CLI tools..."
 if [ -f "cli/install_cli.sh" ]; then
     bash cli/install_cli.sh
+else
+    # Fallback: manual installation
+    sudo cp cli/smite.py /usr/local/bin/smite 2>/dev/null || cp cli/smite.py /usr/local/bin/smite
+    sudo chmod +x /usr/local/bin/smite 2>/dev/null || chmod +x /usr/local/bin/smite
+    echo "Installed smite CLI to /usr/local/bin/smite"
 fi
 
 # Start services
