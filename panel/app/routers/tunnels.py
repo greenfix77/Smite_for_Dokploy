@@ -96,6 +96,15 @@ async def create_tunnel(tunnel: TunnelCreate, request: Request, db: AsyncSession
             }
         )
         
+        # Check if node returned an error
+        if response.get("status") == "error":
+            db_tunnel.status = "error"
+            error_msg = response.get("message", "Unknown error from node")
+            db_tunnel.error_message = f"Node error: {error_msg}"
+            await db.commit()
+            await db.refresh(db_tunnel)
+            return db_tunnel
+        
         if response.get("status") == "success":
             db_tunnel.status = "active"
             
@@ -144,17 +153,12 @@ async def create_tunnel(tunnel: TunnelCreate, request: Request, db: AsyncSession
                 
                 if remote_addr and token and proxy_port and hasattr(request.app.state, 'rathole_server_manager'):
                     try:
-                        success = request.app.state.rathole_server_manager.start_server(
+                        request.app.state.rathole_server_manager.start_server(
                             tunnel_id=db_tunnel.id,
                             remote_addr=remote_addr,
                             token=token,
                             proxy_port=int(proxy_port)
                         )
-                        if not success:
-                            import logging
-                            logging.error(f"Failed to start Rathole server for tunnel {db_tunnel.id}")
-                            db_tunnel.status = "error"
-                            db_tunnel.error_message = "Failed to start Rathole server. Check logs for details."
                     except Exception as e:
                         # Log but don't fail tunnel creation
                         import logging

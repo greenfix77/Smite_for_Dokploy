@@ -102,7 +102,8 @@ bind_addr = "0.0.0.0:{proxy_port}"
             
         except Exception as e:
             logger.error(f"Failed to start Rathole server for tunnel {tunnel_id}: {e}")
-            return False
+            # Re-raise the exception so caller can get the error message
+            raise
     
     def stop_server(self, tunnel_id: str):
         """Stop Rathole server for a tunnel"""

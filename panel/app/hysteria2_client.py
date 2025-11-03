@@ -44,6 +44,11 @@ class Hysteria2Client:
             except httpx.RequestError as e:
                 return {"status": "error", "message": f"Network error: {str(e)}"}
             except httpx.HTTPStatusError as e:
-                return {"status": "error", "message": f"HTTP error: {e.response.status_code}"}
+                # Try to get error details from response body
+                try:
+                    error_detail = e.response.json().get("detail", str(e))
+                except:
+                    error_detail = str(e)
+                return {"status": "error", "message": f"Node error (HTTP {e.response.status_code}): {error_detail}"}
             except Exception as e:
                 return {"status": "error", "message": f"Error: {str(e)}"}
