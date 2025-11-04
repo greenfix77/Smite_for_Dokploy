@@ -69,6 +69,19 @@ class GostForwarder:
             else:
                 raise ValueError(f"Unsupported tunnel type: {tunnel_type}")
             
+            # Check if gost binary exists
+            gost_binary = "/usr/local/bin/gost"
+            import os
+            if not os.path.exists(gost_binary):
+                # Try system gost
+                import shutil
+                gost_binary = shutil.which("gost")
+                if not gost_binary:
+                    raise RuntimeError("gost binary not found at /usr/local/bin/gost or in PATH")
+            
+            cmd[0] = gost_binary
+            logger.info(f"Starting gost with command: {' '.join(cmd)}")
+            
             # Start gost process
             try:
                 proc = subprocess.Popen(
@@ -77,23 +90,22 @@ class GostForwarder:
                     stderr=subprocess.PIPE,
                     cwd=str(self.config_dir)
                 )
-            except FileNotFoundError:
-                # Fallback to system gost if installed
-                cmd[0] = "gost"
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    cwd=str(self.config_dir)
-                )
+            except Exception as e:
+                error_msg = f"Failed to start gost process: {e}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
             
             # Wait a moment to check if process started successfully
             time.sleep(0.5)
             if proc.poll() is not None:
                 # Process died immediately
-                stderr = proc.stderr.read().decode() if proc.stderr else "Unknown error"
-                stdout = proc.stdout.read().decode() if proc.stdout else ""
-                error_msg = f"gost failed to start: {stderr or stdout}"
+                try:
+                    stderr = proc.stderr.read().decode() if proc.stderr else "Unknown error"
+                    stdout = proc.stdout.read().decode() if proc.stdout else ""
+                except:
+                    stderr = "Could not read error output"
+                    stdout = ""
+                error_msg = f"gost failed to start (exit code: {proc.returncode}): {stderr or stdout}"
                 logger.error(error_msg)
                 raise RuntimeError(error_msg)
             
