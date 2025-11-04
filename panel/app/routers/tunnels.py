@@ -143,8 +143,9 @@ async def create_tunnel(tunnel: TunnelCreate, request: Request, db: AsyncSession
                         except Exception as e:
                             # Log but don't fail tunnel creation
                             import logging
+                            logger = logging.getLogger(__name__)
                             error_msg = str(e)
-                            logging.error(f"Failed to start gost forwarding: {error_msg}")
+                            logger.error(f"Failed to start gost forwarding for tunnel {db_tunnel.id}: {error_msg}", exc_info=True)
                             db_tunnel.status = "error"
                             db_tunnel.error_message = f"Gost forwarding error: {error_msg}"
                     else:

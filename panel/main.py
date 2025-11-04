@@ -118,6 +118,7 @@ async def _restore_forwards():
                 
                 # Start gost forwarding
                 try:
+                    logger.info(f"Restoring gost forwarding for tunnel {tunnel.id}: {tunnel.type}://:{remote_port} -> {node_address}:{remote_port}")
                     gost_forwarder.start_forward(
                         tunnel_id=tunnel.id,
                         local_port=int(remote_port),
@@ -125,8 +126,9 @@ async def _restore_forwards():
                         remote_port=int(remote_port),
                         tunnel_type=tunnel.type
                     )
+                    logger.info(f"Successfully restored gost forwarding for tunnel {tunnel.id}")
                 except Exception as e:
-                    logger.error(f"Failed to restore forwarding for tunnel {tunnel.id}: {e}")
+                    logger.error(f"Failed to restore forwarding for tunnel {tunnel.id}: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"Error restoring forwards: {e}")
 
