@@ -22,6 +22,11 @@ from app.gost_forwarder import gost_forwarder
 from app.rathole_server import rathole_server_manager
 import logging
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 
