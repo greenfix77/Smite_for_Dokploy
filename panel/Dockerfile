@@ -40,11 +40,25 @@ RUN ARCH=$(uname -m) && \
     GOST_VERSION=$(curl -sL https://api.github.com/repos/ginuerzh/gost/releases | jq -r '.[0].tag_name // "v2.11.5"') && \
     echo "Downloading gost ${GOST_VERSION} for ${ARCH}..." && \
     GOST_URL="https://github.com/ginuerzh/gost/releases/download/${GOST_VERSION}/gost-linux-${ARCH}-${GOST_VERSION}.gz" && \
-    curl -L "$GOST_URL" -o /tmp/gost.gz -f && \
-    gunzip /tmp/gost.gz && \
-    mv /tmp/gost /usr/local/bin/gost && \
-    chmod +x /usr/local/bin/gost && \
-    gost -V || echo "Gost installed"
+    if curl -L "$GOST_URL" -o /tmp/gost.gz -f; then \
+        gunzip /tmp/gost.gz && \
+        mv /tmp/gost /usr/local/bin/gost && \
+        chmod +x /usr/local/bin/gost && \
+        echo "Gost installed successfully" && \
+        /usr/local/bin/gost -V || echo "Gost version check skipped"; \
+    else \
+        echo "Warning: Failed to download gost from ${GOST_URL}, trying alternative..." && \
+        GOST_ALT_URL="https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-${ARCH}-v2.11.5.gz" && \
+        if curl -L "$GOST_ALT_URL" -o /tmp/gost.gz -f; then \
+            gunzip /tmp/gost.gz && \
+            mv /tmp/gost /usr/local/bin/gost && \
+            chmod +x /usr/local/bin/gost && \
+            echo "Gost installed from alternative URL"; \
+        else \
+            echo "Error: Could not download gost binary" && \
+            exit 1; \
+        fi; \
+    fi
 
 # Stage 3: Python dependencies (cached layer)
 FROM base AS deps
