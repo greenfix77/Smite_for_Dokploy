@@ -246,7 +246,9 @@ const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) =
           updatedSpec.local_addr = `127.0.0.1:${formData.rathole_local_port}`
         }
       } else if (tunnel.core === 'xray' && (tunnel.type === 'tcp' || tunnel.type === 'udp' || tunnel.type === 'ws' || tunnel.type === 'grpc' || tunnel.type === 'tcpmux')) {
-        if (formData.forward_port) {
+        if (formData.forward_to) {
+          updatedSpec.forward_to = formData.forward_to
+        } else if (formData.forward_port) {
           updatedSpec.forward_to = `127.0.0.1:${formData.forward_port}`
         }
       }
