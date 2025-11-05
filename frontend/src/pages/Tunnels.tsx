@@ -596,8 +596,6 @@ const AddTunnelModal = ({ nodes, onClose, onSuccess }: AddTunnelModalProps) => {
                 </p>
               </div>
             )}
-            {formData.core !== 'rathole' && !(formData.core === 'xray' && (formData.type === 'tcp' || formData.type === 'udp' || formData.type === 'ws' || formData.type === 'grpc')) && (
-            )}
             {formData.core === 'rathole' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
