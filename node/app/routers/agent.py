@@ -1,10 +1,8 @@
 """Agent API endpoints"""
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any
 import logging
-import sys
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
