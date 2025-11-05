@@ -160,56 +160,75 @@ async def create_tunnel(tunnel: TunnelCreate, request: Request, db: AsyncSession
                     if panel_port and node_port and hasattr(request.app.state, 'gost_forwarder'):
                         debug_print(f"DEBUG: Conditions met - will start gost forwarding")
                         debug_print(f"DEBUG: IMMEDIATELY AFTER Conditions met - checking node metadata")
-                        # Get node IP address from metadata
-                        debug_print(f"DEBUG: Getting node_address from metadata, node.node_metadata={node.node_metadata}")
-                        node_address = node.node_metadata.get("ip_address") if node.node_metadata else None
-                        debug_print(f"DEBUG: node_address from ip_address field: {node_address}")
-                        if not node_address:
-                            # Try to extract from api_address
-                            api_address = node.node_metadata.get("api_address", "") if node.node_metadata else ""
-                            debug_print(f"DEBUG: api_address={api_address}")
-                            if api_address:
-                                # Extract host from http://host:port or host:port
-                                if "://" in api_address:
-                                    api_address = api_address.split("://")[-1]
-                                if ":" in api_address:
-                                    node_address = api_address.split(":")[0]
-                                else:
-                                    node_address = api_address
-                                debug_print(f"DEBUG: Extracted node_address from api_address: {node_address}")
-                        
-                        debug_print(f"DEBUG: Final node_address={node_address}")
-                        logger.info(f"Tunnel {db_tunnel.id}: node_address={node_address}")
-                        if node_address:
-                            debug_print(f"DEBUG: node_address is truthy, about to call start_forward()")
-                            try:
-                                # Use gost for forwarding: listen on panel_port, forward to node:node_port
-                                debug_print(f"DEBUG: About to call start_forward() with: tunnel_id={db_tunnel.id}, local_port={panel_port}, node_address={node_address}, remote_port={node_port}, tunnel_type={db_tunnel.type}")
-                                logger.info(f"Starting gost forwarding for tunnel {db_tunnel.id}: {db_tunnel.type}://:{panel_port} -> {node_address}:{node_port}")
-                                request.app.state.gost_forwarder.start_forward(
-                                    tunnel_id=db_tunnel.id,
-                                    local_port=int(panel_port),
-                                    node_address=node_address,
-                                    remote_port=int(node_port),
-                                    tunnel_type=db_tunnel.type
-                                )
-                                debug_print(f"DEBUG: start_forward() returned successfully")
-                                logger.info(f"Successfully started gost forwarding for tunnel {db_tunnel.id}")
-                            except Exception as e:
-                                debug_print(f"DEBUG: Exception in start_forward(): {e}")
-                                import traceback
-                                debug_print(f"DEBUG: Traceback: {traceback.format_exc()}")
-                                # Log but don't fail tunnel creation
-                                error_msg = str(e)
-                                logger.error(f"Failed to start gost forwarding for tunnel {db_tunnel.id}: {error_msg}", exc_info=True)
+                        try:
+                            # Get node IP address from metadata
+                            debug_print(f"DEBUG: Getting node_address from metadata, node.node_metadata={node.node_metadata}")
+                            node_address = node.node_metadata.get("ip_address") if node.node_metadata else None
+                            debug_print(f"DEBUG: node_address from ip_address field: {node_address}")
+                            if not node_address:
+                                # Try to extract from api_address
+                                api_address = node.node_metadata.get("api_address", "") if node.node_metadata else ""
+                                debug_print(f"DEBUG: api_address={api_address}")
+                                if api_address:
+                                    # Extract host from http://host:port or host:port
+                                    if "://" in api_address:
+                                        api_address = api_address.split("://")[-1]
+                                    if ":" in api_address:
+                                        node_address = api_address.split(":")[0]
+                                    else:
+                                        node_address = api_address
+                                    debug_print(f"DEBUG: Extracted node_address from api_address: {node_address}")
+                            
+                            debug_print(f"DEBUG: Final node_address={node_address}")
+                            logger.info(f"Tunnel {db_tunnel.id}: node_address={node_address}")
+                            if not node_address:
+                                error_msg = "Node IP address not found in metadata"
+                                logger.warning(f"Tunnel {db_tunnel.id}: {error_msg}")
                                 db_tunnel.status = "error"
-                                db_tunnel.error_message = f"Gost forwarding error: {error_msg}"
-                        else:
-                            logger.warning(f"Tunnel {db_tunnel.id}: Node IP address not found in metadata")
+                                db_tunnel.error_message = error_msg
+                                debug_print(f"DEBUG: ERROR - {error_msg}")
+                            else:
+                                debug_print(f"DEBUG: node_address is truthy, about to call start_forward()")
+                                try:
+                                    # Use gost for forwarding: listen on panel_port, forward to node:node_port
+                                    debug_print(f"DEBUG: About to call start_forward() with: tunnel_id={db_tunnel.id}, local_port={panel_port}, node_address={node_address}, remote_port={node_port}, tunnel_type={db_tunnel.type}")
+                                    logger.info(f"Starting gost forwarding for tunnel {db_tunnel.id}: {db_tunnel.type}://:{panel_port} -> {node_address}:{node_port}")
+                                    request.app.state.gost_forwarder.start_forward(
+                                        tunnel_id=db_tunnel.id,
+                                        local_port=int(panel_port),
+                                        node_address=node_address,
+                                        remote_port=int(node_port),
+                                        tunnel_type=db_tunnel.type
+                                    )
+                                    debug_print(f"DEBUG: start_forward() returned successfully")
+                                    logger.info(f"Successfully started gost forwarding for tunnel {db_tunnel.id}")
+                                except Exception as e:
+                                    debug_print(f"DEBUG: Exception in start_forward(): {e}")
+                                    import traceback
+                                    debug_print(f"DEBUG: Traceback: {traceback.format_exc()}")
+                                    # Log but don't fail tunnel creation
+                                    error_msg = str(e)
+                                    logger.error(f"Failed to start gost forwarding for tunnel {db_tunnel.id}: {error_msg}", exc_info=True)
+                                    db_tunnel.status = "error"
+                                    db_tunnel.error_message = f"Gost forwarding error: {error_msg}"
+                        except Exception as e:
+                            debug_print(f"DEBUG: Exception in node_address extraction: {e}")
+                            import traceback
+                            debug_print(f"DEBUG: Traceback: {traceback.format_exc()}")
+                            error_msg = f"Error extracting node address: {str(e)}"
+                            logger.error(f"Tunnel {db_tunnel.id}: {error_msg}", exc_info=True)
                             db_tunnel.status = "error"
-                            db_tunnel.error_message = "Node IP address not found in metadata"
+                            db_tunnel.error_message = error_msg
                     else:
-                        logger.warning(f"Tunnel {db_tunnel.id}: Missing remote_port or gost_forwarder not available")
+                        missing = []
+                        if not panel_port:
+                            missing.append("panel_port")
+                        if not node_port:
+                            missing.append("node_port")
+                        if not hasattr(request.app.state, 'gost_forwarder'):
+                            missing.append("gost_forwarder")
+                        logger.warning(f"Tunnel {db_tunnel.id}: Missing required fields: {missing}")
+                        debug_print(f"DEBUG: Missing: {missing}, panel_port={panel_port}, node_port={node_port}")
                 
                 elif needs_rathole_server:
                     # Start Rathole server on panel

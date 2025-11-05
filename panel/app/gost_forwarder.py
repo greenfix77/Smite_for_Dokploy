@@ -75,12 +75,24 @@ class GostForwarder:
             # Check if gost binary exists
             gost_binary = "/usr/local/bin/gost"
             import os
+            debug_print(f"Checking for gost binary at {gost_binary}...")
             if not os.path.exists(gost_binary):
+                debug_print(f"gost not found at {gost_binary}, checking PATH...")
                 # Try system gost
                 import shutil
                 gost_binary = shutil.which("gost")
                 if not gost_binary:
-                    raise RuntimeError("gost binary not found at /usr/local/bin/gost or in PATH")
+                    error_msg = "gost binary not found at /usr/local/bin/gost or in PATH"
+                    debug_print(f"ERROR: {error_msg}")
+                    raise RuntimeError(error_msg)
+                debug_print(f"Found gost at {gost_binary}")
+            else:
+                debug_print(f"Found gost at {gost_binary}")
+                # Check if executable
+                if not os.access(gost_binary, os.X_OK):
+                    error_msg = f"gost binary at {gost_binary} is not executable"
+                    debug_print(f"ERROR: {error_msg}")
+                    raise RuntimeError(error_msg)
             
             cmd[0] = gost_binary
             debug_print(f"Command to execute: {' '.join(cmd)}")
