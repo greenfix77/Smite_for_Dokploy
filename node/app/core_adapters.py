@@ -89,19 +89,31 @@ class TCPAdapter:
             self.remove(tunnel_id)
         
         # Start xray-core
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
+            logger.info(f"Starting Xray for tunnel {tunnel_id} with config: {config_path}")
+            logger.info(f"Xray config: {json.dumps(config, indent=2)}")
             proc = subprocess.Popen(
                 ["/usr/local/bin/xray", "-config", str(config_path)],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
             self.processes[tunnel_id] = proc
-            time.sleep(0.5)  # Give it a moment to start
-            if proc.poll() is not None:
+            logger.info(f"Xray process started with PID: {proc.pid}")
+            time.sleep(1.0)  # Give it more time to start
+            poll_result = proc.poll()
+            if poll_result is not None:
                 # Process died immediately
                 stderr = proc.stderr.read().decode() if proc.stderr else "Unknown error"
-                raise RuntimeError(f"xray failed to start: {stderr}")
+                stdout = proc.stdout.read().decode() if proc.stdout else ""
+                error_msg = f"xray failed to start (exit code: {poll_result}): stderr={stderr}, stdout={stdout}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+            logger.info(f"Xray process {proc.pid} is running for tunnel {tunnel_id}")
         except FileNotFoundError:
+            logger.warning("Xray not found at /usr/local/bin/xray, trying system xray")
             # Fallback to system xray if installed
             proc = subprocess.Popen(
                 ["xray", "-config", str(config_path)],
@@ -109,10 +121,16 @@ class TCPAdapter:
                 stderr=subprocess.PIPE
             )
             self.processes[tunnel_id] = proc
-            time.sleep(0.5)
-            if proc.poll() is not None:
+            logger.info(f"Xray process started with PID: {proc.pid}")
+            time.sleep(1.0)
+            poll_result = proc.poll()
+            if poll_result is not None:
                 stderr = proc.stderr.read().decode() if proc.stderr else "Unknown error"
-                raise RuntimeError(f"xray failed to start: {stderr}")
+                stdout = proc.stdout.read().decode() if proc.stdout else ""
+                error_msg = f"xray failed to start (exit code: {poll_result}): stderr={stderr}, stdout={stdout}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+            logger.info(f"Xray process {proc.pid} is running for tunnel {tunnel_id}")
     
     def remove(self, tunnel_id: str):
         """Remove TCP tunnel"""
