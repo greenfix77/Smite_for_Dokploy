@@ -65,9 +65,8 @@ class GostForwarder:
                     forward_port = "8080"
                 cmd = [
                     "/usr/local/bin/gost",
-                    f"-L=ws://:{local_port}/tcp://{forward_host}:{forward_port}"
+                    f"-L=ws://0.0.0.0:{local_port}/tcp://{forward_host}:{forward_port}"
                 ]
-                logger.info(f"WS tunnel: Using plain ws:// protocol (always plain WS, ignores HTTPS settings) - {local_port} -> {forward_host}:{forward_port}")
             elif tunnel_type == "grpc":
                 if ":" in forward_to:
                     forward_host, forward_port = forward_to.rsplit(":", 1)
