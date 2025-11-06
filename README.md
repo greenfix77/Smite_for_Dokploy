@@ -21,6 +21,18 @@
 
 ---
 
+## 🛠️ Tech Stack
+
+- **Backend**: Python (FastAPI), SQLAlchemy, Alembic
+- **Frontend**: React, TypeScript, Tailwind CSS
+- **Containerization**: Docker, Docker Compose
+- **Reverse Proxy**: Nginx
+- **Tunneling**: GOST, Rathole
+- **Database**: SQLite
+- **SSL/TLS**: Let's Encrypt (Certbot)
+
+---
+
 ## 📋 Prerequisites
 
 - Docker and Docker Compose installed

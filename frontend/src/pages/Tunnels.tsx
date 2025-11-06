@@ -100,8 +100,13 @@ const Tunnels = () => {
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">{tunnel.name}</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {tunnel.core} / {tunnel.type}
+                  {tunnel.core === 'xray' ? 'gost' : tunnel.core} / {tunnel.type}
                 </p>
+                {tunnel.node_id && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    Node: {nodes.find(n => n.id === tunnel.node_id)?.name || tunnel.node_id}
+                  </p>
+                )}
               </div>
               <div className="flex gap-2 ml-2">
                 <button
@@ -387,34 +392,6 @@ const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) =
                 />
               </div>
             </>
-          )}
-          
-          {tunnel.core === 'xray' && (tunnel.type === 'tcp' || tunnel.type === 'udp' || tunnel.type === 'grpc' || tunnel.type === 'tcpmux') && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Forward To
-              </label>
-              <input
-                type="text"
-                value={formData.forward_to || (formData.forward_port ? `127.0.0.1:${formData.forward_port}` : '127.0.0.1:2053')}
-                onChange={(e) => {
-                  const value = e.target.value || '127.0.0.1:2053'
-                  setFormData({ ...formData, forward_to: value })
-                  // Extract port for backward compatibility
-                  if (value.includes(':')) {
-                    const parts = value.split(':')
-                    if (parts.length >= 2) {
-                      setFormData(prev => ({ ...prev, forward_port: parts[parts.length - 1] }))
-                    }
-                  }
-                }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                placeholder="127.0.0.1:2053"
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Target address (host:port) to forward traffic to
-              </p>
-            </div>
           )}
           
           <div className="flex gap-3 justify-end">
