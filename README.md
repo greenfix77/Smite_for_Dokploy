@@ -135,6 +135,7 @@ docker compose up -d
 ### Panel CLI (`smite`)
 ```bash
 smite admin create      # Create admin user
+smite admin update      # Update admin password
 smite status            # Show system status
 smite update            # Update and restart
 smite logs              # View logs
