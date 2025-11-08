@@ -97,6 +97,7 @@ RUN ARCH=$(uname -m) && \
 FROM base AS backhaul-bin
 ARG BACKHAUL_MODULE=github.com/zZedix/backhaul
 ARG BACKHAUL_VERSION=latest
+ARG BACKHAUL_GIT_TOKEN=
 ENV GO111MODULE=on
 ENV GOBIN=/usr/local/bin
 RUN set -eux; \
@@ -104,6 +105,9 @@ RUN set -eux; \
     apt-get install -y git golang; \
     rm -rf /var/lib/apt/lists/*; \
     mkdir -p /opt/backhaul; \
+    if [ -n "${BACKHAUL_GIT_TOKEN}" ]; then \
+        git config --global url."https://${BACKHAUL_GIT_TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/"; \
+    fi; \
     GOBIN=/tmp/backhaul-bin go install ${BACKHAUL_MODULE}/cmd/backhaul@${BACKHAUL_VERSION}; \
     if [ -f /tmp/backhaul-bin/backhaul ]; then \
         install -Dm755 /tmp/backhaul-bin/backhaul /opt/backhaul/backhaul; \
@@ -113,6 +117,9 @@ RUN set -eux; \
         echo "Backhaul binary missing after installation"; \
         ls -R "$(go env GOPATH)/bin" || true; \
         exit 1; \
+    fi; \
+    if [ -n "${BACKHAUL_GIT_TOKEN}" ]; then \
+        rm -f /root/.gitconfig; \
     fi; \
     /opt/backhaul/backhaul --version || true
 
