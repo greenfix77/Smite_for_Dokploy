@@ -115,6 +115,8 @@ USE_DOMAIN=${USE_DOMAIN:-n}
 DOMAIN=""
 DOMAIN_EMAIL=""
 NGINX_ENABLED="false"
+SMITE_HTTP_PORT="80"
+SMITE_HTTPS_PORT="443"
 
 if [ "$USE_DOMAIN" = "y" ] || [ "$USE_DOMAIN" = "Y" ]; then
     read -p "Enter your domain name (e.g., panel.example.com): " DOMAIN
@@ -126,6 +128,10 @@ if [ "$USE_DOMAIN" = "y" ] || [ "$USE_DOMAIN" = "Y" ]; then
         fi
         if [ -n "$DOMAIN_EMAIL" ]; then
             NGINX_ENABLED="true"
+            read -p "HTTP port for the panel (default: 80): " SMITE_HTTP_PORT_INPUT
+            SMITE_HTTP_PORT=${SMITE_HTTP_PORT_INPUT:-80}
+            read -p "HTTPS port for the panel (default: 443): " SMITE_HTTPS_PORT_INPUT
+            SMITE_HTTPS_PORT=${SMITE_HTTPS_PORT_INPUT:-443}
             echo "HTTPS will be automatically configured with Let's Encrypt"
         else
             echo -e "${YELLOW}Warning: Email is required for Let's Encrypt. HTTPS setup skipped.${NC}"
@@ -144,6 +150,9 @@ PANEL_PORT=$PANEL_PORT
 PANEL_HOST=0.0.0.0
 HTTPS_ENABLED=${NGINX_ENABLED}
 PANEL_DOMAIN=${DOMAIN}
+SMITE_HTTP_PORT=${SMITE_HTTP_PORT}
+SMITE_HTTPS_PORT=${SMITE_HTTPS_PORT}
+SMITE_SSL_DOMAIN=${DOMAIN}
 DOCS_ENABLED=true
 
 DB_TYPE=$DB_TYPE
