@@ -12,8 +12,7 @@ services:
     env_file:
       - .env
     environment:
-      - PANEL_PORT
-      - PANEL_HOST
+      - PANEL_HOST=${PANEL_HOST:-0.0.0.0}
       - DB_TYPE=${DB_TYPE:-sqlite}
       - DB_PATH=${DB_PATH:-./data/smite.db}
       - SMITE_VERSION=${SMITE_VERSION:-latest}
