@@ -18,6 +18,7 @@ const Layout = ({ children }: LayoutProps) => {
     return saved ? JSON.parse(saved) : false
   })
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [version, setVersion] = useState('v0.1.0')
 
   useEffect(() => {
     localStorage.setItem('darkMode', JSON.stringify(darkMode))
@@ -31,6 +32,19 @@ const Layout = ({ children }: LayoutProps) => {
   useEffect(() => {
     setSidebarOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    fetch('/api/status/version')
+      .then(res => res.json())
+      .then(data => {
+        if (data.version) {
+          setVersion(`v${data.version}`)
+        }
+      })
+      .catch(() => {
+        setVersion('v0.1.0')
+      })
+  }, [])
   
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -143,7 +157,7 @@ const Layout = ({ children }: LayoutProps) => {
                 </a>
               </div>
               <div className="flex items-center gap-2">
-                <span>v0.1.0</span>
+                <span>{version}</span>
                 <a 
                   href="https://github.com/zZedix/Smite" 
                   target="_blank" 

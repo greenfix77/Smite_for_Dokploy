@@ -5,6 +5,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
+from app.utils import parse_address_port, format_address_port
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,7 +19,7 @@ class RatholeServerManager:
         self.active_servers: Dict[str, subprocess.Popen] = {}
         self.server_configs: Dict[str, dict] = {}
     
-    def start_server(self, tunnel_id: str, remote_addr: str, token: str, proxy_port: int) -> bool:
+    def start_server(self, tunnel_id: str, remote_addr: str, token: str, proxy_port: int, use_ipv6: bool = False) -> bool:
         """
         Start a Rathole server for a tunnel
         
@@ -26,15 +28,19 @@ class RatholeServerManager:
             remote_addr: Panel address where server listens for client connections (e.g., "0.0.0.0:23333")
             token: Authentication token
             proxy_port: Port where clients will connect to access the tunneled service (e.g., 8989)
+            use_ipv6: Whether to use IPv6 (default: False for IPv4)
         
         Returns:
             True if server started successfully, False otherwise
         """
         try:
-            if ":" in remote_addr:
-                bind_addr = f"0.0.0.0:{remote_addr.split(':')[1]}"
-            else:
-                raise ValueError(f"Invalid remote_addr format: {remote_addr}")
+            # Parse remote_addr to extract port and IPv6 info (handles IPv4, IPv6, and hostnames)
+            _, port, _ = parse_address_port(remote_addr)
+            if port is None:
+                raise ValueError(f"Invalid remote_addr format: {remote_addr} (port required)")
+            
+            bind_addr = f"0.0.0.0:{port}"
+            proxy_bind_addr = f"0.0.0.0:{proxy_port}"
             
             if tunnel_id in self.active_servers:
                 logger.warning(f"Rathole server for tunnel {tunnel_id} already exists, stopping it first")
@@ -45,7 +51,7 @@ bind_addr = "{bind_addr}"
 default_token = "{token}"
 
 [server.services.{tunnel_id}]
-bind_addr = "0.0.0.0:{proxy_port}"
+bind_addr = "{proxy_bind_addr}"
 """
             
             config_path = self.config_dir / f"{tunnel_id}.toml"
@@ -117,13 +123,16 @@ bind_addr = "0.0.0.0:{proxy_port}"
             
             try:
                 import socket
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1)
-                port = int(bind_addr.split(':')[1])
-                result = sock.connect_ex(('127.0.0.1', port))
-                sock.close()
-                if result != 0:
-                    logger.warning(f"Rathole server port {port} not listening after start, but process is running. PID: {proc.pid}")
+                # Extract port from bind_addr
+                _, port, _ = parse_address_port(bind_addr)
+                if port:
+                    # Always check IPv4 since panel listens on 0.0.0.0
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1)
+                    result = sock.connect_ex(('127.0.0.1', port))
+                    sock.close()
+                    if result != 0:
+                        logger.warning(f"Rathole server port {port} not listening after start, but process is running. PID: {proc.pid}")
             except Exception as e:
                 logger.warning(f"Could not verify rathole server port is listening: {e}")
             

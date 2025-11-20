@@ -77,16 +77,44 @@ def get_panel_url():
     return f"http://localhost:{port}"
 
 
-def run_docker_compose(args, capture_output=False):
+def run_docker_compose(args, capture_output=False, env_vars=None, profile=None):
     """Run docker compose command"""
     compose_file = get_compose_file()
     if not compose_file.exists():
         print(f"Error: docker-compose.yml not found at {compose_file}")
         sys.exit(1)
     
-    cmd = ["docker", "compose", "-f", str(compose_file)] + args
-    result = subprocess.run(cmd, capture_output=capture_output, text=True)
-    return result
+    compose_dir = compose_file.parent
+    env_file = compose_dir / ".env"
+    if env_vars is None:
+        env_vars = os.environ.copy()
+    else:
+        env_vars = env_vars.copy()
+    
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                parts = line.split('=', 1)
+                if len(parts) == 2:
+                    key = parts[0].strip()
+                    value = parts[1].strip()
+                    if key:
+                        env_vars[key] = value
+    
+    original_cwd = Path.cwd()
+    
+    try:
+        os.chdir(compose_dir)
+        if profile:
+            env_vars["COMPOSE_PROFILES"] = profile
+        cmd = ["docker", "compose", "-f", str(compose_file)] + args
+        result = subprocess.run(cmd, capture_output=capture_output, text=True, cwd=str(compose_dir), env=env_vars)
+        if not capture_output and result.returncode != 0:
+            sys.exit(result.returncode)
+        return result
+    finally:
+        os.chdir(original_cwd)
 
 
 def cmd_admin_create(args):
@@ -669,10 +697,34 @@ def cmd_status(args):
 
 
 def cmd_update(args):
-    """Update panel"""
+    """Update panel (pull images and recreate)"""
     print("Updating panel...")
     run_docker_compose(["pull"])
     run_docker_compose(["up", "-d", "--force-recreate"])
+    print("Panel updated.")
+
+
+def cmd_restart(args):
+    """Restart panel (recreate container to pick up .env changes, no pull)"""
+    print("Restarting panel...")
+    run_docker_compose(["stop", "smite-panel"])
+    run_docker_compose(["rm", "-f", "smite-panel"])
+    run_docker_compose(["up", "-d", "--no-deps", "smite-panel"])
+    
+    import time
+    time.sleep(2)
+    result = subprocess.run(["docker", "ps", "--filter", "name=smite-panel", "--format", "{{.Status}}"], capture_output=True, text=True)
+    if not result.stdout.strip() or "Up" not in result.stdout:
+        print("Warning: Panel container may not be running. Check logs with: docker logs smite-panel")
+    
+    result = subprocess.run(["docker", "ps", "--filter", "name=smite-nginx", "--format", "{{.Names}}"], capture_output=True, text=True)
+    if result.stdout.strip():
+        print("Restarting nginx...")
+        run_docker_compose(["stop", "nginx"], profile="https")
+        run_docker_compose(["rm", "-f", "nginx"], profile="https")
+        run_docker_compose(["up", "-d", "--no-deps", "nginx"], profile="https")
+    
+    print("Panel restarted. Tunnels are preserved.")
 
 
 def cmd_edit(args):
@@ -717,7 +769,9 @@ def main():
     
     subparsers.add_parser("status", help="Show system status")
     
-    subparsers.add_parser("update", help="Update panel")
+    subparsers.add_parser("update", help="Update panel (pull images and recreate)")
+    
+    subparsers.add_parser("restart", help="Restart panel (recreate to pick up .env changes)")
     
     subparsers.add_parser("edit", help="Edit docker-compose.yml")
     
@@ -743,6 +797,8 @@ def main():
         cmd_status(args)
     elif args.command == "update":
         cmd_update(args)
+    elif args.command == "restart":
+        cmd_restart(args)
     elif args.command == "edit":
         cmd_edit(args)
     elif args.command == "edit-env":

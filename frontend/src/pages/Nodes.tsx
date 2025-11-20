@@ -23,11 +23,9 @@ const Nodes = () => {
 
   useEffect(() => {
     fetchNodes()
-    // Check if we should open the modal from URL params
     const params = new URLSearchParams(window.location.search)
     if (params.get('add') === 'true') {
       setShowAddModal(true)
-      // Clean URL
       window.history.replaceState({}, '', '/nodes')
     }
   }, [])

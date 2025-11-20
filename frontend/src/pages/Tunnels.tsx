@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Trash2, Edit2 } from 'lucide-react'
 import api from '../api/client'
+import { parseAddressPort, formatAddressPort } from '../utils/addressUtils'
 
 interface Tunnel {
   id: string
@@ -179,11 +180,9 @@ const Tunnels = () => {
 
   useEffect(() => {
     fetchData()
-    // Check if we should open the modal from URL params
     const params = new URLSearchParams(window.location.search)
     if (params.get('create') === 'true') {
       setShowAddModal(true)
-      // Clean URL
       window.history.replaceState({}, '', '/tunnels')
     }
     
@@ -322,7 +321,29 @@ const Tunnels = () => {
                   <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
                     <span className="text-sm text-gray-500 dark:text-gray-400">Local Port</span>
                     <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      {tunnel.spec?.local_addr ? tunnel.spec.local_addr.split(':')[1] : 'N/A'}
+                      {tunnel.spec?.local_addr ? (() => {
+                        const parsed = parseAddressPort(tunnel.spec.local_addr)
+                        return parsed.port?.toString() || 'N/A'
+                      })() : 'N/A'}
+                    </span>
+                  </div>
+                </>
+              )}
+              {tunnel.core === 'chisel' && (
+                <>
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Control Port</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {tunnel.spec?.control_port || (tunnel.spec?.listen_port ? (parseInt(tunnel.spec.listen_port.toString()) + 10000).toString() : 'N/A')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Local Port</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {tunnel.spec?.local_addr ? (() => {
+                        const parsed = parseAddressPort(tunnel.spec.local_addr)
+                        return parsed.port?.toString() || 'N/A'
+                      })() : 'N/A'}
                     </span>
                   </div>
                 </>
@@ -331,7 +352,7 @@ const Tunnels = () => {
                 <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
                   <span className="text-sm text-gray-500 dark:text-gray-400">Forward To</span>
                   <span className="text-sm font-medium text-gray-900 dark:text-white break-all ml-2">
-                    {tunnel.spec.forward_to || `${tunnel.spec.remote_ip}:${tunnel.spec.remote_port}`}
+                    {tunnel.spec.forward_to || formatAddressPort(tunnel.spec.remote_ip, tunnel.spec.remote_port)}
                   </span>
                 </div>
               )}
@@ -398,17 +419,24 @@ interface EditTunnelModalProps {
 }
 
 const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) => {
-  // Extract remote_ip and remote_port from spec (Shifter pattern)
-  // Fallback to parsing forward_to for backward compatibility
-  const remoteIp = tunnel.spec?.remote_ip || (tunnel.spec?.forward_to ? tunnel.spec.forward_to.split(':')[0] : '127.0.0.1')
-  const remotePort = tunnel.spec?.remote_port || (tunnel.spec?.forward_to ? parseInt(tunnel.spec.forward_to.split(':')[1]) || 8080 : 8080)
+  const forwardToParsed = tunnel.spec?.forward_to ? parseAddressPort(tunnel.spec.forward_to) : null
+  const remoteIp = tunnel.spec?.remote_ip || forwardToParsed?.host || '127.0.0.1'
+  const remotePort = tunnel.spec?.remote_port || forwardToParsed?.port || 8080
   
   const [formData, setFormData] = useState({
     name: tunnel.name,
     port: tunnel.spec?.listen_port || tunnel.spec?.remote_port || 8080,
     remote_ip: remoteIp,
-    rathole_remote_addr: tunnel.spec?.remote_addr ? (tunnel.spec.remote_addr.includes(':') ? tunnel.spec.remote_addr.split(':')[1] : tunnel.spec.remote_addr) : '',
-    rathole_local_port: tunnel.spec?.local_addr ? tunnel.spec.local_addr.split(':')[1] : '',
+    rathole_remote_addr: tunnel.spec?.remote_addr ? (() => {
+      const parsed = parseAddressPort(tunnel.spec.remote_addr)
+      return parsed.port?.toString() || ''
+    })() : '',
+    rathole_local_port: tunnel.spec?.local_addr ? (() => {
+      const parsed = parseAddressPort(tunnel.spec.local_addr)
+      return parsed.port?.toString() || ''
+    })() : '',
+    chisel_control_port: tunnel.spec?.control_port ? tunnel.spec.control_port.toString() : '',
+    node_ipv6: tunnel.spec?.node_ipv6 || '',
   })
   const parsedBackhaul = parseBackhaulSpec(tunnel.spec, tunnel.type)
   const [backhaulState, setBackhaulState] = useState<BackhaulFormState>(parsedBackhaul.state)
@@ -418,8 +446,9 @@ const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) =
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      // Build updated spec
       let updatedSpec = { ...tunnel.spec }
+      
+      const useV4ToV6 = updatedSpec.use_ipv6 || false
       
       if (tunnel.core === 'rathole') {
         if (formData.rathole_remote_addr) {
@@ -430,9 +459,15 @@ const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) =
           updatedSpec.remote_addr = `${remoteHost}:${remotePort || '23333'}`
         }
         if (formData.rathole_local_port) {
-          updatedSpec.local_addr = `127.0.0.1:${formData.rathole_local_port}`
+          const localHost = useV4ToV6 
+            ? (formData.node_ipv6 || '::1')
+            : '127.0.0.1'
+          const localPort = parseInt(formData.rathole_local_port) || 8080
+          updatedSpec.local_addr = formatAddressPort(localHost, localPort)
         }
-        // Proxy port (listen_port) is where clients connect to access the tunneled service
+        if (formData.node_ipv6) {
+          updatedSpec.node_ipv6 = formData.node_ipv6
+        }
         const port = parseInt(formData.port.toString()) || parseInt(formData.rathole_local_port) || 8090
         updatedSpec.remote_port = port
         updatedSpec.listen_port = port
@@ -442,8 +477,25 @@ const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) =
         updatedSpec.remote_ip = remoteIp
         updatedSpec.remote_port = port
         updatedSpec.listen_port = port
-        // Also set forward_to for backward compatibility
-        updatedSpec.forward_to = `${remoteIp}:${port}`
+        updatedSpec.forward_to = formatAddressPort(remoteIp, port)
+      } else if (tunnel.core === 'chisel') {
+        const listenPort = parseInt(formData.port.toString()) || 8080
+        updatedSpec.listen_port = listenPort
+        updatedSpec.remote_port = listenPort
+        const controlPort = formData.chisel_control_port 
+          ? parseInt(formData.chisel_control_port.toString())
+          : listenPort + 10000
+        updatedSpec.control_port = controlPort
+        if (formData.rathole_local_port) {
+          const localHost = updatedSpec.use_ipv6 
+            ? (formData.node_ipv6 || '::1')
+            : '127.0.0.1'
+          const localPort = parseInt(formData.rathole_local_port) || 8080
+          updatedSpec.local_addr = formatAddressPort(localHost, localPort)
+        }
+        if (formData.node_ipv6) {
+          updatedSpec.node_ipv6 = formData.node_ipv6
+        }
       } else if (tunnel.core === 'backhaul') {
         updatedSpec = buildBackhaulSpec(backhaulState, backhaulAdvanced, tunnel.type as BackhaulTransport)
       }
@@ -489,10 +541,10 @@ const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) =
                     setFormData({ ...formData, remote_ip: e.target.value || '127.0.0.1' })
                   }
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                  placeholder="127.0.0.1"
+                  placeholder="127.0.0.1 or [2001:db8::1]"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Target server IP address
+                  Target server IP address (IPv4 or IPv6)
                 </p>
               </div>
               <div>
@@ -591,6 +643,114 @@ const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) =
             </>
           )}
           
+          {tunnel.core === 'chisel' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Reverse Port
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.port}
+                    onChange={(e) =>
+                      setFormData({ ...formData, port: parseInt(e.target.value) || 8080 })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                    min="1"
+                    max="65535"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Port where clients connect to access tunneled service
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Control Port
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.chisel_control_port}
+                    onChange={(e) =>
+                      setFormData({ ...formData, chisel_control_port: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                    placeholder={`${(parseInt(formData.port.toString()) || 8080) + 10000} (auto)`}
+                    min="1"
+                    max="65535"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Chisel server control port (leave empty for auto: reverse port + 10000)
+                  </p>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Local Port
+                </label>
+                <input
+                  type="number"
+                  value={formData.rathole_local_port}
+                  onChange={(e) =>
+                    setFormData({ ...formData, rathole_local_port: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                  placeholder="8080"
+                  min="1"
+                  max="65535"
+                  required
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {tunnel.spec?.use_ipv6 
+                    ? `Port on node where local service listens (IPv6: [${tunnel.spec?.node_ipv6 || '::1'}]:${formData.rathole_local_port || '8080'})`
+                    : `Port on node where local service listens`}
+                </p>
+              </div>
+              {/* Node IPv6 address field for Chisel when v4 to v6 is enabled */}
+              {tunnel.spec?.use_ipv6 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Node IPv6 Address (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.node_ipv6}
+                    onChange={(e) =>
+                      setFormData({ ...formData, node_ipv6: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                    placeholder="::1 or 2001:db8::1"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    IPv6 address of the node. Leave empty to use ::1 (localhost IPv6)
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+          
+          {/* Node IPv6 address field for Rathole when v4 to v6 is enabled */}
+          {tunnel.core === 'rathole' && tunnel.spec?.use_ipv6 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Node IPv6 Address (Optional)
+              </label>
+              <input
+                type="text"
+                value={formData.node_ipv6}
+                onChange={(e) =>
+                  setFormData({ ...formData, node_ipv6: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                placeholder="::1 or 2001:db8::1"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                IPv6 address of the node. Leave empty to use ::1 (localhost IPv6)
+              </p>
+            </div>
+          )}
+          
           <div className="flex gap-3 justify-end">
             <button
               type="button"
@@ -635,6 +795,9 @@ const AddTunnelModal = ({ nodes, onClose, onSuccess }: AddTunnelModalProps) => {
     rathole_remote_addr: '23333',
     rathole_token: '',
     rathole_local_port: '8080',
+    chisel_control_port: '',  // Empty means auto (listen_port + 10000)
+    use_ipv6: false,
+    node_ipv6: '',  // Optional IPv6 address for node (Rathole/Chisel)
     spec: {} as Record<string, any>,
   })
   const [backhaulState, setBackhaulState] = useState<BackhaulFormState>(createDefaultBackhaulState())
@@ -647,29 +810,48 @@ const AddTunnelModal = ({ nodes, onClose, onSuccess }: AddTunnelModalProps) => {
       let spec = getSpecForType(formData.core, formData.type)
       let tunnelType = formData.type
       
-      // For GOST tunnels (TCP/UDP/gRPC/TCPMux), set remote_ip and remote_port (Shifter pattern)
+      spec.use_ipv6 = formData.use_ipv6 || false
+      
       if (formData.core === 'xray' && (formData.type === 'tcp' || formData.type === 'udp' || formData.type === 'grpc' || formData.type === 'tcpmux')) {
-        const remoteIp = formData.remote_ip || '127.0.0.1'
+        const remoteIp = formData.remote_ip || (formData.use_ipv6 ? '::1' : '127.0.0.1')
         const port = parseInt(formData.port.toString()) || 8080
         spec.remote_ip = remoteIp
         spec.remote_port = port
         spec.listen_port = port
-        // Also set forward_to for backward compatibility
-        spec.forward_to = `${remoteIp}:${port}`
+        spec.forward_to = formatAddressPort(remoteIp, port)
       }
       
-      // For Rathole, add required fields
       if (formData.core === 'rathole') {
-        // Use window.location.hostname for IP, rathole_remote_addr is just the port now
         const remoteHost = window.location.hostname
         const remotePort = formData.rathole_remote_addr || '23333'
         spec.remote_addr = `${remoteHost}:${remotePort}`
         spec.token = formData.rathole_token
-        spec.local_addr = `127.0.0.1:${formData.rathole_local_port}`
-        // Proxy port (listen_port) is where clients connect to access the tunneled service
+        const localHost = formData.use_ipv6 
+          ? (formData.node_ipv6 || '::1')
+          : '127.0.0.1'
+        const localPort = parseInt(formData.rathole_local_port) || 8080
+        spec.local_addr = formatAddressPort(localHost, localPort)
         const port = parseInt(formData.port.toString()) || parseInt(formData.rathole_local_port) || 8090
         spec.remote_port = port
         spec.listen_port = port
+      }
+      
+      if (formData.core === 'chisel') {
+        const listenPort = parseInt(formData.port.toString()) || 8080
+        spec.listen_port = listenPort
+        spec.remote_port = listenPort
+        spec.server_port = listenPort
+        const controlPort = formData.chisel_control_port 
+          ? parseInt(formData.chisel_control_port.toString())
+          : listenPort + 10000
+        spec.control_port = controlPort
+        const localPort = parseInt(formData.rathole_local_port?.toString() || formData.port?.toString() || '8080')
+        const localHost = formData.use_ipv6 
+          ? (formData.node_ipv6 || '::1')
+          : '127.0.0.1'
+        spec.local_addr = formatAddressPort(localHost, localPort)
+        const panelHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+        spec.panel_host = panelHost
       }
       
       if (formData.core === 'backhaul') {
@@ -678,6 +860,7 @@ const AddTunnelModal = ({ nodes, onClose, onSuccess }: AddTunnelModalProps) => {
           return
         }
         spec = buildBackhaulSpec(backhaulState, backhaulAdvanced)
+        spec.use_ipv6 = formData.use_ipv6 || false
         tunnelType = backhaulState.transport
       }
       
@@ -685,7 +868,7 @@ const AddTunnelModal = ({ nodes, onClose, onSuccess }: AddTunnelModalProps) => {
         name: formData.name,
         core: formData.core,
         type: tunnelType,
-        node_id: formData.node_id || null,  // null for GOST tunnels (no node needed)
+        node_id: formData.node_id || null,
         spec: spec,
       }
       await api.post('/tunnels', payload)
@@ -697,16 +880,12 @@ const AddTunnelModal = ({ nodes, onClose, onSuccess }: AddTunnelModalProps) => {
   }
 
   const getSpecForType = (core: string, type: string): Record<string, any> => {
-    const baseSpec: Record<string, any> = {
-      // listen_port will be set from formData.local_port
-    }
+    const baseSpec: Record<string, any> = {}
 
-    // Rathole is a separate core, not a type
     if (core === 'rathole') {
       return { ...baseSpec, remote_addr: '', token: '', local_addr: '127.0.0.1:8080' }
     }
 
-    // GOST core types
     switch (type) {
       case 'grpc':
         return { ...baseSpec, service_name: 'GrpcService', uuid: generateUUID() }
@@ -717,15 +896,14 @@ const AddTunnelModal = ({ nodes, onClose, onSuccess }: AddTunnelModalProps) => {
     }
   }
 
-  // When core changes, update type accordingly
   const handleCoreChange = (core: string) => {
     let newType = formData.type
-    if (core === 'rathole') {
-      newType = core // Type matches core for rathole
+    if (core === 'rathole' || core === 'chisel') {
+      newType = core
     } else if (core === 'backhaul') {
       newType = backhaulState.transport
-    } else if (formData.type === 'rathole' || formData.core === 'backhaul') {
-      newType = 'tcp' // Reset to default GOST type
+    } else if (formData.type === 'rathole' || formData.type === 'chisel' || formData.core === 'backhaul') {
+      newType = 'tcp'
     }
     setFormData({ ...formData, core, type: newType })
   }
@@ -791,6 +969,7 @@ const AddTunnelModal = ({ nodes, onClose, onSuccess }: AddTunnelModalProps) => {
                 <option value="xray">GOST</option>
                 <option value="rathole">Rathole</option>
                 <option value="backhaul">Backhaul</option>
+                <option value="chisel">Chisel</option>
               </select>
             </div>
             <div>
@@ -807,9 +986,9 @@ const AddTunnelModal = ({ nodes, onClose, onSuccess }: AddTunnelModalProps) => {
                   }
                 }}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                disabled={formData.core === 'rathole'}
+                disabled={formData.core === 'rathole' || formData.core === 'chisel'}
               >
-                {formData.core === 'rathole' ? (
+                {formData.core === 'rathole' || formData.core === 'chisel' ? (
                   <option value={formData.core}>{formData.core.charAt(0).toUpperCase() + formData.core.slice(1)}</option>
                 ) : formData.core === 'backhaul' ? (
                   <>
@@ -844,10 +1023,10 @@ const AddTunnelModal = ({ nodes, onClose, onSuccess }: AddTunnelModalProps) => {
                     setFormData({ ...formData, remote_ip: e.target.value || '127.0.0.1' })
                   }
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                  placeholder="127.0.0.1"
+                  placeholder="127.0.0.1 or [2001:db8::1]"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Target server IP address
+                  Target server IP address (IPv4 or IPv6)
                 </p>
               </div>
               <div>
@@ -968,6 +1147,92 @@ const AddTunnelModal = ({ nodes, onClose, onSuccess }: AddTunnelModalProps) => {
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Local service port (127.0.0.1:{formData.rathole_local_port || '8080'})</p>
               </div>
             </div>
+          )}
+          
+          {formData.core === 'chisel' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Reverse Port
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.port}
+                    onChange={(e) =>
+                      setFormData({ ...formData, port: parseInt(e.target.value) || 8080 })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                    min="1"
+                    max="65535"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Port where clients connect to access tunneled service
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Control Port
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.chisel_control_port}
+                    onChange={(e) =>
+                      setFormData({ ...formData, chisel_control_port: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                    placeholder={`${(parseInt(formData.port.toString()) || 8080) + 10000} (auto)`}
+                    min="1"
+                    max="65535"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Chisel server control port (leave empty for auto: reverse port + 10000)
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Local Port
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.rathole_local_port}
+                    onChange={(e) =>
+                      setFormData({ ...formData, rathole_local_port: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                    placeholder="8080"
+                    min="1"
+                    max="65535"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Port on node where local service listens</p>
+                </div>
+              </div>
+            </>
+          )}
+          
+          {/* v4 to v6 tunnel checkbox - only for Rathole, Backhaul, Chisel (not GOST) */}
+          {formData.core !== 'xray' && (
+            <>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="v4_to_v6"
+                  checked={formData.use_ipv6}
+                  onChange={(e) => setFormData({ ...formData, use_ipv6: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                />
+                <label htmlFor="v4_to_v6" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  v4 to v6 tunnel
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2">
+                Enable this to create a tunnel from IPv4 (panel) to IPv6 (node/target). Panel listens on IPv4, target uses IPv6.
+              </p>
+            </>
           )}
 
           <div className="flex gap-3 justify-end">
@@ -1469,7 +1734,7 @@ function BackhaulAdvancedDrawer({
               value={state.customPorts}
               onChange={(e) => onChange({ ...state, customPorts: e.target.value })}
               className="w-full min-h-[120px] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-white"
-              placeholder={`One entry per line. Examples:\n443\n443=127.0.0.1:8080\n2000-2100=127.0.0.1:22`}
+              placeholder={`One entry per line. Examples:\n443\n443=127.0.0.1:8080\n443=[2001:db8::1]:8080\n2000-2100=127.0.0.1:22`}
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Format matches Backhaul ports syntax. Leave empty to use the single public port above.
@@ -1627,14 +1892,15 @@ function parseBackhaulSpec(spec: Record<string, any>, currentType: string): {
 
   if (spec.target_host) {
     state.target_host = String(spec.target_host)
-  } else if (typeof spec.target_addr === 'string' && spec.target_addr.includes(':')) {
-    state.target_host = spec.target_addr.split(':')[0]
+  } else if (typeof spec.target_addr === 'string') {
+    const parsed = parseAddressPort(spec.target_addr)
+    state.target_host = parsed.host
   }
 
   const targetPortCandidate =
     spec.target_port ??
-    (typeof spec.target_addr === 'string' && spec.target_addr.includes(':')
-      ? spec.target_addr.split(':')[1]
+    (typeof spec.target_addr === 'string'
+      ? parseAddressPort(spec.target_addr).port
       : undefined)
   if (targetPortCandidate) {
     state.target_port = String(targetPortCandidate)

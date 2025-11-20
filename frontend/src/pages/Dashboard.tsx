@@ -25,19 +25,19 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const fetchStatus = async () => {
+    const fetchData = async () => {
       try {
-        const response = await api.get('/status')
-        setStatus(response.data)
+        const statusResponse = await api.get('/status')
+        setStatus(statusResponse.data)
       } catch (error) {
-        console.error('Failed to fetch status:', error)
+        console.error('Failed to fetch data:', error)
       } finally {
         setLoading(false)
       }
     }
 
-    fetchStatus()
-    const interval = setInterval(fetchStatus, 5000)
+    fetchData()
+    const interval = setInterval(fetchData, 5000)
     return () => {
       clearInterval(interval)
     }

@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     iptables \
     curl \
     unzip \
+    gzip \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -35,8 +36,16 @@ RUN set -eux; \
     GOST_BIN="$(find "$GOST_TMP" -type f -name 'gost' | head -n1)"; \
     install -Dm755 "$GOST_BIN" /usr/local/bin/gost; \
     rm -rf "$GOST_TMP"; \
+    echo "Fetching chisel release"; \
+    CHISEL_URL="https://github.com/jpillora/chisel/releases/download/v1.11.3/chisel_1.11.3_linux_${ARCH}.gz"; \
+    CHISEL_TMP="$(mktemp -d)"; \
+    curl -fsSL "$CHISEL_URL" -o "$CHISEL_TMP/chisel.gz"; \
+    gunzip "$CHISEL_TMP/chisel.gz"; \
+    install -Dm755 "$CHISEL_TMP/chisel" /usr/local/bin/chisel; \
+    rm -rf "$CHISEL_TMP"; \
     /usr/local/bin/rathole --version || true; \
-    /usr/local/bin/gost -V || true
+    /usr/local/bin/gost -V || true; \
+    /usr/local/bin/chisel --version || true
 
 # Stage 3: Install backhaul (cached layer)
 FROM base AS backhaul-bin
@@ -70,7 +79,6 @@ RUN set -eux; \
 FROM base AS deps
 WORKDIR /app
 COPY requirements.txt .
-# Use pip cache if available
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir -r requirements.txt
 
@@ -80,6 +88,7 @@ WORKDIR /app
 
 # Copy binaries from binary stages
 COPY --from=rathole-bin /usr/local/bin/rathole /usr/local/bin/rathole
+COPY --from=rathole-bin /usr/local/bin/chisel /usr/local/bin/chisel
 COPY --from=backhaul-bin /opt/backhaul/backhaul /usr/local/bin/backhaul
 
 # Copy Python dependencies from deps stage
@@ -90,4 +99,8 @@ COPY . .
 
 EXPOSE 8888
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888", "--log-level", "info", "--access-log"]
+RUN echo '#!/bin/sh' > /app/start.sh && \
+    echo 'exec uvicorn main:app --host 0.0.0.0 --port "${NODE_API_PORT:-8888}" --log-level info --access-log' >> /app/start.sh && \
+    chmod +x /app/start.sh
+
+CMD ["/bin/sh", "/app/start.sh"]

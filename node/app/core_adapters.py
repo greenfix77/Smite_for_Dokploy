@@ -4,8 +4,52 @@ import subprocess
 import os
 import psutil
 import time
+import logging
 from pathlib import Path
 import shutil
+
+logger = logging.getLogger(__name__)
+def parse_address_port(address_str: str):
+    """Parse address:port string, returns (host, port, is_ipv6)"""
+    import re
+    import ipaddress
+    
+    if not address_str:
+        return ("", None, False)
+    
+    address_str = address_str.strip()
+    
+    ipv6_bracket_match = re.match(r'^\[([^\]]+)\](?::(\d+))?$', address_str)
+    if ipv6_bracket_match:
+        host = ipv6_bracket_match.group(1)
+        port_str = ipv6_bracket_match.group(2)
+        port = int(port_str) if port_str else None
+        return (host, port, True)
+    
+    try:
+        ipaddress.IPv6Address(address_str)
+        return (address_str, None, True)
+    except (ValueError, ipaddress.AddressValueError):
+        pass
+    
+    if ":" in address_str:
+        parts = address_str.rsplit(":", 1)
+        if len(parts) == 2:
+            host_part = parts[0]
+            port_str = parts[1]
+            
+            try:
+                ipaddress.IPv6Address(host_part)
+                return (host_part, int(port_str), True)
+            except (ValueError, ipaddress.AddressValueError):
+                try:
+                    port = int(port_str)
+                    return (host_part, port, False)
+                except ValueError:
+                    return (address_str, None, False)
+    
+    # No port specified
+    return (address_str, None, False)
 
 
 class CoreAdapter(Protocol):
@@ -23,10 +67,6 @@ class CoreAdapter(Protocol):
     def status(self, tunnel_id: str) -> Dict[str, Any]:
         """Get tunnel status"""
         ...
-    
-    def get_usage_mb(self, tunnel_id: str) -> float:
-        """Get usage in MB"""
-        ...
 
 
 class RatholeAdapter:
@@ -37,10 +77,13 @@ class RatholeAdapter:
         self.config_dir = Path("/etc/smite-node/rathole")
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.processes = {}
-        self.usage_tracking = {}
     
     def apply(self, tunnel_id: str, spec: Dict[str, Any]):
         """Apply Rathole tunnel"""
+        if tunnel_id in self.processes:
+            logger.info(f"Rathole tunnel {tunnel_id} already exists, removing it first")
+            self.remove(tunnel_id)
+        
         remote_addr = spec.get('remote_addr', '').strip()
         token = spec.get('token', '').strip()
         local_addr = spec.get('local_addr', '127.0.0.1:8080')
@@ -123,34 +166,6 @@ local_addr = "{local_addr}"
             "config_exists": config_path.exists(),
             "process_running": is_running
         }
-    
-    def get_usage_mb(self, tunnel_id: str) -> float:
-        """Get usage in MB - tracks cumulative network I/O"""
-        if tunnel_id in self.processes:
-            proc = self.processes[tunnel_id]
-            try:
-                proc_info = psutil.Process(proc.pid)
-                connections = proc_info.connections()
-                
-                try:
-                    io_counters = proc_info.io_counters()
-                    total_bytes = io_counters.read_bytes + io_counters.write_bytes
-                    
-                    if tunnel_id not in self.usage_tracking:
-                        self.usage_tracking[tunnel_id] = 0.0
-                    
-                    current_mb = total_bytes / (1024 * 1024)
-                    if current_mb > self.usage_tracking[tunnel_id]:
-                        self.usage_tracking[tunnel_id] = current_mb
-                    
-                    return self.usage_tracking[tunnel_id]
-                except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError, OSError):
-                    if tunnel_id in self.usage_tracking:
-                        return self.usage_tracking[tunnel_id]
-            except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError, OSError):
-                if tunnel_id in self.usage_tracking:
-                    return self.usage_tracking[tunnel_id]
-        return 0.0
 
 
 class BackhaulAdapter:
@@ -193,7 +208,6 @@ class BackhaulAdapter:
         self.config_dir = Path(resolved_config)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.processes: Dict[str, subprocess.Popen] = {}
-        self.usage_tracking: Dict[str, float] = {}
         self.log_handles: Dict[str, Any] = {}
         default_binary = binary_path or Path(
             os.environ.get("BACKHAUL_CLIENT_BINARY", "/usr/local/bin/backhaul")
@@ -204,6 +218,10 @@ class BackhaulAdapter:
         ]
 
     def apply(self, tunnel_id: str, spec: Dict[str, Any]):
+        if tunnel_id in self.processes:
+            logger.info(f"Backhaul tunnel {tunnel_id} already exists, removing it first")
+            self.remove(tunnel_id)
+        
         remote_addr = spec.get("remote_addr") or spec.get("control_addr") or spec.get("bind_addr")
         if not remote_addr:
             raise ValueError("Backhaul requires 'remote_addr' in spec")
@@ -273,10 +291,10 @@ class BackhaulAdapter:
 
         self.processes[tunnel_id] = proc
         self.log_handles[tunnel_id] = log_fh
-        self.usage_tracking.setdefault(tunnel_id, 0.0)
 
     def remove(self, tunnel_id: str):
         config_path = self.config_dir / f"{tunnel_id}.toml"
+        
         if tunnel_id in self.processes:
             proc = self.processes[tunnel_id]
             try:
@@ -310,22 +328,6 @@ class BackhaulAdapter:
             "config_exists": config_path.exists(),
             "process_running": is_running,
         }
-
-    def get_usage_mb(self, tunnel_id: str) -> float:
-        if tunnel_id in self.processes:
-            proc = self.processes[tunnel_id]
-            try:
-                proc_info = psutil.Process(proc.pid)
-                io_counters = proc_info.io_counters()
-                total_bytes = io_counters.read_bytes + io_counters.write_bytes
-                current_mb = total_bytes / (1024 * 1024)
-                previous = self.usage_tracking.get(tunnel_id, 0.0)
-                if current_mb > previous:
-                    self.usage_tracking[tunnel_id] = current_mb
-                return self.usage_tracking.get(tunnel_id, current_mb)
-            except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError, OSError):
-                return self.usage_tracking.get(tunnel_id, 0.0)
-        return self.usage_tracking.get(tunnel_id, 0.0)
 
     def _render_toml(self, data: Dict[str, Dict[str, Any]]) -> str:
         def format_value(value: Any) -> str:
@@ -365,6 +367,170 @@ class BackhaulAdapter:
         )
 
 
+class ChiselAdapter:
+    """Chisel reverse tunnel adapter"""
+    name = "chisel"
+    
+    def __init__(self):
+        self.config_dir = Path("/etc/smite-node/chisel")
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        self.processes = {}
+        self.log_handles = {}  # Store log file handles to keep them open
+    
+    def _resolve_binary_path(self) -> Path:
+        """Resolve chisel binary path"""
+        # Check environment variable first
+        env_path = os.environ.get("CHISEL_BINARY")
+        if env_path:
+            resolved = Path(env_path)
+            if resolved.exists() and resolved.is_file():
+                return resolved
+        
+        # Check common locations
+        common_paths = [
+            Path("/usr/local/bin/chisel"),
+            Path("/usr/bin/chisel"),
+            Path("/opt/chisel/chisel"),
+        ]
+        
+        for path in common_paths:
+            if path.exists() and path.is_file():
+                return path
+        
+        # Check PATH
+        resolved = shutil.which("chisel")
+        if resolved:
+            return Path(resolved)
+        
+        raise FileNotFoundError(
+            "Chisel binary not found. Expected at CHISEL_BINARY, '/usr/local/bin/chisel', or in PATH."
+        )
+    
+    def apply(self, tunnel_id: str, spec: Dict[str, Any]):
+        """Apply Chisel tunnel"""
+        # Remove existing tunnel if it exists
+        if tunnel_id in self.processes:
+            logger.info(f"Chisel tunnel {tunnel_id} already exists, removing it first")
+            self.remove(tunnel_id)
+        
+        server_url = spec.get('server_url', '').strip()
+        reverse_port = spec.get('reverse_port') or spec.get('remote_port') or spec.get('listen_port') or spec.get('server_port')
+        local_addr = spec.get('local_addr')
+        
+        if not server_url:
+            raise ValueError("Chisel requires 'server_url' (panel server address) in spec")
+        if not reverse_port:
+            raise ValueError("Chisel requires 'reverse_port', 'remote_port', or 'listen_port' in spec")
+        
+        if not local_addr:
+            local_addr = f"127.0.0.1:{reverse_port}"
+            logger.warning(f"Chisel tunnel {tunnel_id}: local_addr not specified, defaulting to {local_addr}")
+        
+        host, port, is_ipv6 = parse_address_port(local_addr)
+        if not port:
+            raise ValueError(f"Invalid local_addr format: {local_addr} (port required)")
+        
+        if is_ipv6:
+            reverse_spec = f"R:{reverse_port}:[{host}]:{port}"
+        else:
+            reverse_spec = f"R:{reverse_port}:{host}:{port}"
+        logger.info(f"Chisel tunnel {tunnel_id}: reverse_spec={reverse_spec}, server_url={server_url}")
+        
+        binary_path = self._resolve_binary_path()
+        cmd = [
+            str(binary_path),
+            "client",
+            server_url,
+            reverse_spec
+        ]
+        
+        # Optional: Add authentication if provided
+        auth = spec.get('auth')
+        if auth:
+            cmd.extend(["--auth", auth])
+        
+        # Optional: Add fingerprint if provided
+        fingerprint = spec.get('fingerprint')
+        if fingerprint:
+            cmd.extend(["--fingerprint", fingerprint])
+        
+        # Start chisel client process
+        log_file = self.config_dir / f"{tunnel_id}.log"
+        log_f = open(log_file, 'w', buffering=1)
+        try:
+            log_f.write(f"Starting chisel client for tunnel {tunnel_id}\n")
+            log_f.write(f"Command: {' '.join(cmd)}\n")
+            log_f.write(f"server_url={server_url}, reverse_spec={reverse_spec}\n")
+            log_f.flush()
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log_f,
+                stderr=subprocess.STDOUT,
+                cwd=str(self.config_dir),
+                start_new_session=True
+            )
+            self.log_handles[tunnel_id] = log_f
+            self.processes[tunnel_id] = proc
+            time.sleep(1.0)  # Give it more time to start
+            if proc.poll() is not None:
+                stderr = ""
+                if log_file.exists():
+                    with open(log_file, 'r') as f:
+                        stderr = f.read()
+                # Close log handle if process failed
+                if tunnel_id in self.log_handles:
+                    try:
+                        self.log_handles[tunnel_id].close()
+                    except:
+                        pass
+                    del self.log_handles[tunnel_id]
+                raise RuntimeError(f"chisel failed to start: {stderr[-500:] if len(stderr) > 500 else stderr}")
+        except FileNotFoundError:
+            log_f.close()
+            raise RuntimeError("chisel binary not found. Please install chisel.")
+    
+    def remove(self, tunnel_id: str):
+        """Remove Chisel tunnel"""
+        if tunnel_id in self.processes:
+            proc = self.processes[tunnel_id]
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            except:
+                pass
+            del self.processes[tunnel_id]
+        
+        # Close log file handle
+        if tunnel_id in self.log_handles:
+            try:
+                self.log_handles[tunnel_id].close()
+            except:
+                pass
+            del self.log_handles[tunnel_id]
+        
+        try:
+            subprocess.run(["pkill", "-f", f"chisel.*{tunnel_id}"], check=False, timeout=3)
+        except:
+            pass
+    
+    def status(self, tunnel_id: str) -> Dict[str, Any]:
+        """Get status"""
+        is_running = False
+        
+        if tunnel_id in self.processes:
+            proc = self.processes[tunnel_id]
+            is_running = proc.poll() is None
+        
+        return {
+            "active": is_running,
+            "type": "chisel",
+            "process_running": is_running
+        }
+
+
 class AdapterManager:
     """Manager for core adapters"""
     
@@ -372,9 +538,9 @@ class AdapterManager:
         self.adapters: Dict[str, CoreAdapter] = {
             "rathole": RatholeAdapter(),
             "backhaul": BackhaulAdapter(),
+            "chisel": ChiselAdapter(),
         }
         self.active_tunnels: Dict[str, CoreAdapter] = {}
-        self.usage_tracking: Dict[str, float] = {}
     
     def get_adapter(self, tunnel_core: str) -> Optional[CoreAdapter]:
         """Get adapter for tunnel core"""
@@ -386,6 +552,11 @@ class AdapterManager:
         logger = logging.getLogger(__name__)
         logger.info(f"Applying tunnel {tunnel_id}: core={tunnel_core}")
         
+        # Remove existing tunnel if it exists
+        if tunnel_id in self.active_tunnels:
+            logger.info(f"Tunnel {tunnel_id} already exists, removing it first")
+            await self.remove_tunnel(tunnel_id)
+        
         adapter = self.get_adapter(tunnel_core)
         if not adapter:
             error_msg = f"Unknown tunnel core: {tunnel_core}"
@@ -395,8 +566,6 @@ class AdapterManager:
         logger.info(f"Using adapter: {adapter.name}")
         adapter.apply(tunnel_id, spec)
         self.active_tunnels[tunnel_id] = adapter
-        if tunnel_id not in self.usage_tracking:
-            self.usage_tracking[tunnel_id] = 0.0
         logger.info(f"Tunnel {tunnel_id} applied successfully")
     
     async def remove_tunnel(self, tunnel_id: str):
@@ -405,8 +574,6 @@ class AdapterManager:
             adapter = self.active_tunnels[tunnel_id]
             adapter.remove(tunnel_id)
             del self.active_tunnels[tunnel_id]
-        if tunnel_id in self.usage_tracking:
-            del self.usage_tracking[tunnel_id]
     
     async def get_tunnel_status(self, tunnel_id: str) -> Dict[str, Any]:
         """Get tunnel status"""

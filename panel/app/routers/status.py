@@ -10,6 +10,22 @@ from app.models import Tunnel, Node
 
 router = APIRouter()
 
+VERSION = "0.1.0"
+
+
+@router.get("/version")
+async def get_version():
+    """Get panel version from Docker image tag"""
+    import os
+    smite_version = os.getenv("SMITE_VERSION", "")
+    
+    if smite_version:
+        version = smite_version.lstrip("v")
+    else:
+        version = VERSION
+    
+    return {"version": version}
+
 
 @router.get("")
 async def get_status(db: AsyncSession = Depends(get_db)):

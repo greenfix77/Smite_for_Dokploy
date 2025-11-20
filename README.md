@@ -7,7 +7,7 @@
     <img src="assets/SmiteL.png" alt="Smite Logo" width="200"/>
   </picture>
   
-  **Modern tunnel management built on GOST, Backhaul, and Rathole, featuring an intuitive WebUI, fast CLI, and open-source freedom.**
+  **Modern tunnel management built on GOST, Backhaul, Rathole, and Chisel, featuring an intuitive WebUI, fast CLI, and open-source freedom.**
   
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
   [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
@@ -23,11 +23,11 @@
 
 ## 🚀 Features
 
-- **Multiple Tunnel Types**: Support for TCP, UDP, gRPC, TCPMux, Backhaul, and Rathole
+- **Multiple Tunnel Types**: Support for TCP, UDP, gRPC, TCPMux, Backhaul, Rathole, and Chisel
 - **Docker-First**: Easy deployment with Docker Compose
 - **Web UI**: Modern, intuitive web interface for tunnel management
 - **CLI Tools**: Powerful command-line tools for management
-- **Node Support**: Easy reverse tunnel setup with Backhaul and Rathole nodes
+- **Node Support**: Easy reverse tunnel setup with Backhaul, Rathole, and Chisel nodes
 - **GOST Forwarding**: Direct forwarding without nodes for better performance
 
 ---
@@ -47,7 +47,7 @@
 ### Quick Install
 
 ```bash
-sudo bash -c "$(curl -sL https://raw.githubusercontent.com/zZedix/Smite/master/scripts/install.sh)"
+sudo bash -c "$(curl -sL https://raw.githubusercontent.com/zZedix/Smite/main/scripts/install.sh)"
 ```
 
 ### Manual Install
@@ -86,12 +86,12 @@ smite admin create
 
 ## 🖥️ Node Installation
 
-> **Note**: Nodes are used for **Backhaul** and **Rathole** tunnels, providing easy reverse tunnel functionality. For GOST tunnels (TCP, UDP, gRPC, TCPMux), you can forward directly without a node.
+> **Note**: Nodes are used for **Backhaul**, **Rathole**, and **Chisel** tunnels, providing easy reverse tunnel functionality. For GOST tunnels (TCP, UDP, gRPC, TCPMux), you can forward directly without a node.
 
 ### Quick Install
 
 ```bash
-sudo bash -c "$(curl -sL https://raw.githubusercontent.com/zZedix/Smite/master/scripts/smite-node.sh)"
+sudo bash -c "$(curl -sL https://raw.githubusercontent.com/zZedix/Smite/main/scripts/smite-node.sh)"
 ```
 
 The installer will prompt for:
@@ -133,19 +133,41 @@ docker compose up -d
 ## 🛠️ CLI Tools
 
 ### Panel CLI (`smite`)
+
+**Admin Management:**
 ```bash
 smite admin create      # Create admin user
 smite admin update      # Update admin password
+```
+
+**Panel Management:**
+```bash
 smite status            # Show system status
-smite update            # Update and restart
-smite logs              # View logs
+smite update            # Update panel (pull images and recreate)
+smite restart           # Restart panel (recreate to pick up .env changes)
+smite logs              # View panel logs
+```
+
+**Configuration:**
+```bash
+smite edit              # Edit docker-compose.yml
+smite edit-env          # Edit .env file
 ```
 
 ### Node CLI (`smite-node`)
+
+**Node Management:**
 ```bash
 smite-node status       # Show node status
-smite-node update       # Update node
-smite-node logs         # View logs
+smite-node update       # Update node (pull images and recreate)
+smite-node restart      # Restart node (recreate to pick up .env changes)
+smite-node logs         # View node logs
+```
+
+**Configuration:**
+```bash
+smite-node edit         # Edit docker-compose.yml
+smite-node edit-env     # Edit .env file
 ```
 
 ---
@@ -169,6 +191,9 @@ Backhaul tunnels require a node. The panel manages the Backhaul server automatic
 
 ### Rathole Tunnels (Reverse Tunnel)
 Rathole tunnels require a node and provide easy reverse tunnel functionality. The node connects to the panel, allowing you to expose services running on the node's network through the panel.
+
+### Chisel Tunnels (Reverse Tunnel)
+Chisel tunnels require a node and provide fast TCP/UDP reverse tunnel functionality. Similar to Rathole, the node connects to the panel's Chisel server, enabling you to expose services running on the node's network through the panel with high performance.
 
 ---
 

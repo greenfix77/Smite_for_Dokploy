@@ -18,7 +18,6 @@ class PortForwarder:
     async def start_forward(self, local_port: int, node_address: str, remote_port: int) -> bool:
         """Start forwarding from local_port to node_address:remote_port"""
         try:
-            # Check if already forwarding on this port
             if local_port in self.active_forwards:
                 logger.warning(f"Port {local_port} already being forwarded, stopping old forward")
                 await self.stop_forward(local_port)
@@ -132,20 +131,16 @@ class PortForwarder:
                     pass
                 return
             
-            # Create bidirectional forwarding with better error handling
             async def forward(src_reader: StreamReader, dst_writer: StreamWriter, direction: str):
                 try:
                     while True:
                         try:
-                            # Use shorter timeout for better responsiveness
                             data = await asyncio.wait_for(src_reader.read(8192), timeout=60.0)
                             if not data:
                                 break
                             dst_writer.write(data)
                             await dst_writer.drain()
                         except asyncio.TimeoutError:
-                            # Connection idle - keep it alive by checking if still connected
-                            # Don't write empty data, just check if writer is still open
                             try:
                                 if dst_writer.is_closing():
                                     break

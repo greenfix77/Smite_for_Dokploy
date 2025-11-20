@@ -5,6 +5,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
+from app.utils import parse_address_port, format_address_port
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,16 +19,17 @@ class GostForwarder:
         self.active_forwards: Dict[str, subprocess.Popen] = {}
         self.forward_configs: Dict[str, dict] = {}
     
-    def start_forward(self, tunnel_id: str, local_port: int, forward_to: str, tunnel_type: str = "tcp", path: str = None) -> bool:
+    def start_forward(self, tunnel_id: str, local_port: int, forward_to: str, tunnel_type: str = "tcp", path: str = None, use_ipv6: bool = False) -> bool:
         """
         Start forwarding using gost - forwards directly to target (no node)
 
         Args:
             tunnel_id: Unique tunnel identifier
             local_port: Port on panel to listen on
-            forward_to: Target address:port (e.g., "127.0.0.1:9999" or "1.2.3.4:443")
+            forward_to: Target address:port (e.g., "127.0.0.1:9999" or "[2001:db8::1]:443")
             tunnel_type: Type of forwarding (tcp, udp, ws, grpc)
             path: Optional path for WS tunnels (ignored, kept for compatibility)
+            use_ipv6: Whether to use IPv6 for listening (default: False for IPv4)
 
         Returns:
             True if started successfully
@@ -37,63 +40,56 @@ class GostForwarder:
                 self.stop_forward(tunnel_id)
                 time.sleep(0.5)
             
+            # Parse forward_to address (handles IPv4, IPv6, and hostnames)
+            forward_host, forward_port, forward_is_ipv6 = parse_address_port(forward_to)
+            if forward_port is None:
+                forward_port = 8080
+            
+            target_addr = format_address_port(forward_host, forward_port)
+            
+            # Determine listen address based on IPv6 preference
+            if use_ipv6:
+                listen_addr = f"[::]:{local_port}"
+            else:
+                listen_addr = f"0.0.0.0:{local_port}"
+            
             if tunnel_type == "tcp":
-                if ":" in forward_to:
-                    forward_host, forward_port = forward_to.rsplit(":", 1)
-                else:
-                    forward_host = forward_to
-                    forward_port = "8080"
                 cmd = [
                     "/usr/local/bin/gost",
-                    f"-L=tcp://0.0.0.0:{local_port}/{forward_host}:{forward_port}"
+                    f"-L=tcp://{listen_addr}/{target_addr}"
                 ]
             elif tunnel_type == "udp":
-                if ":" in forward_to:
-                    forward_host, forward_port = forward_to.rsplit(":", 1)
-                else:
-                    forward_host = forward_to
-                    forward_port = "8080"
                 cmd = [
                     "/usr/local/bin/gost",
-                    f"-L=udp://0.0.0.0:{local_port}/{forward_host}:{forward_port}"
+                    f"-L=udp://{listen_addr}/{target_addr}"
                 ]
             elif tunnel_type == "ws":
-                if ":" in forward_to:
-                    forward_host, forward_port = forward_to.rsplit(":", 1)
-                else:
-                    forward_host = forward_to
-                    forward_port = "8080"
                 import socket
                 try:
-                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    s.connect(("8.8.8.8", 80))
-                    bind_ip = s.getsockname()[0]
+                    if use_ipv6:
+                        s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+                        s.connect(("2001:4860:4860::8888", 80))
+                        bind_ip = s.getsockname()[0]
+                    else:
+                        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                        s.connect(("8.8.8.8", 80))
+                        bind_ip = s.getsockname()[0]
                     s.close()
                 except Exception:
-                    bind_ip = "0.0.0.0"
+                    bind_ip = "[::]" if use_ipv6 else "0.0.0.0"
                 cmd = [
                     "/usr/local/bin/gost",
-                    f"-L=ws://{bind_ip}:{local_port}/tcp://{forward_host}:{forward_port}"
+                    f"-L=ws://{bind_ip}:{local_port}/tcp://{target_addr}"
                 ]
             elif tunnel_type == "grpc":
-                if ":" in forward_to:
-                    forward_host, forward_port = forward_to.rsplit(":", 1)
-                else:
-                    forward_host = forward_to
-                    forward_port = "8080"
                 cmd = [
                     "/usr/local/bin/gost",
-                    f"-L=grpc://0.0.0.0:{local_port}/{forward_host}:{forward_port}"
+                    f"-L=grpc://{listen_addr}/{target_addr}"
                 ]
             elif tunnel_type == "tcpmux":
-                if ":" in forward_to:
-                    forward_host, forward_port = forward_to.rsplit(":", 1)
-                else:
-                    forward_host = forward_to
-                    forward_port = "8080"
                 cmd = [
                     "/usr/local/bin/gost",
-                    f"-L=tcpmux://0.0.0.0:{local_port}/{forward_host}:{forward_port}"
+                    f"-L=tcpmux://{listen_addr}/{target_addr}"
                 ]
             else:
                 raise ValueError(f"Unsupported tunnel type: {tunnel_type}")

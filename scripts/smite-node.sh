@@ -73,6 +73,9 @@ if [ -z "$PANEL_ADDRESS" ]; then
     exit 1
 fi
 
+read -p "Panel port (should match the panel's port from panel installation, default: 8000): " PANEL_API_PORT
+PANEL_API_PORT=${PANEL_API_PORT:-8000}
+
 read -p "Node API port (default: 8888): " NODE_API_PORT
 NODE_API_PORT=${NODE_API_PORT:-8888}
 
@@ -95,13 +98,19 @@ NODE_NAME=$NODE_NAME
 
 PANEL_CA_PATH=/etc/smite-node/certs/ca.crt
 PANEL_ADDRESS=$PANEL_ADDRESS
+PANEL_API_PORT=$PANEL_API_PORT
 EOF
 
 # Clone/update node files from GitHub
+GIT_BRANCH=""
+if [ "${SMITE_VERSION:-latest}" = "next" ]; then
+    GIT_BRANCH="-b next"
+fi
+
 if [ ! -f "Dockerfile" ]; then
     echo "Cloning node files from GitHub..."
     TEMP_DIR=$(mktemp -d)
-    git clone https://github.com/zZedix/Smite.git "$TEMP_DIR" || {
+    git clone --depth 1 $GIT_BRANCH https://github.com/zZedix/Smite.git "$TEMP_DIR" || {
         echo "Error: Failed to clone repository"
         exit 1
     }
@@ -113,7 +122,7 @@ else
     # Update docker-compose.yml and Dockerfile if they exist
     echo "Updating node files from GitHub..."
     TEMP_DIR=$(mktemp -d)
-    git clone https://github.com/zZedix/Smite.git "$TEMP_DIR" || {
+    git clone --depth 1 $GIT_BRANCH https://github.com/zZedix/Smite.git "$TEMP_DIR" || {
         echo "Warning: Failed to clone repository for updates"
         rm -rf "$TEMP_DIR"
     } || true
@@ -134,25 +143,86 @@ elif [ -f "$INSTALL_DIR/../Smite/cli/smite-node.py" ]; then
 else
     # Download CLI directly
     echo "Downloading CLI tool..."
-    sudo curl -L https://raw.githubusercontent.com/zZedix/Smite/main/cli/smite-node.py -o /usr/local/bin/smite-node
+    CLI_BRANCH="main"
+    if [ "${SMITE_VERSION:-latest}" = "next" ]; then
+        CLI_BRANCH="next"
+    fi
+    sudo curl -L https://raw.githubusercontent.com/zZedix/Smite/${CLI_BRANCH}/cli/smite-node.py -o /usr/local/bin/smite-node
     sudo chmod +x /usr/local/bin/smite-node
 fi
 
 # Create config directory
 mkdir -p config
 
-# Enable IP forwarding (required for host network mode)
+# Apply network optimizations for stable tunnels
 echo ""
-echo "Enabling IP forwarding on host system..."
-if ! grep -q "net.ipv4.ip_forward=1" /etc/sysctl.conf; then
-    echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+echo "Applying network optimizations..."
+if [ -f "/etc/sysctl.conf" ]; then
+    # Backup original sysctl.conf
+    if [ ! -f "/etc/sysctl.conf.smite-backup" ]; then
+        cp /etc/sysctl.conf /etc/sysctl.conf.smite-backup
+    fi
+    
+    # Add network optimizations if not already present
+    if ! grep -q "# Smite Network Optimizations" /etc/sysctl.conf; then
+        cat >> /etc/sysctl.conf << 'EOF'
+
+# Smite Network Optimizations
+net.core.somaxconn = 65535
+net.core.netdev_max_backlog = 5000
+net.ipv4.tcp_max_syn_backlog = 8192
+net.ipv4.ip_local_port_range = 10000 65535
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_fin_timeout = 30
+net.ipv4.tcp_keepalive_time = 600
+net.ipv4.tcp_keepalive_intvl = 60
+net.ipv4.tcp_keepalive_probes = 3
+net.ipv4.tcp_slow_start_after_idle = 0
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.ipv4.udp_mem = 3145728 4194304 16777216
+net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 1
+EOF
+        # Apply optimizations
+        sysctl -p > /dev/null 2>&1 || true
+        echo "✅ Network optimizations applied"
+    else
+        echo "✅ Network optimizations already applied"
+    fi
 fi
-if ! grep -q "net.ipv6.conf.all.forwarding=1" /etc/sysctl.conf; then
-    echo "net.ipv6.conf.all.forwarding=1" >> /etc/sysctl.conf
+
+# Increase file descriptor limits
+if [ -f "/etc/security/limits.conf" ]; then
+    if ! grep -q "# Smite File Descriptor Limits" /etc/security/limits.conf; then
+        cat >> /etc/security/limits.conf << 'EOF'
+
+# Smite File Descriptor Limits
+* soft nofile 65535
+* hard nofile 65535
+root soft nofile 65535
+root hard nofile 65535
+EOF
+        echo "✅ File descriptor limits increased"
+    fi
+    # Apply for current session
+    ulimit -n 65535 2>/dev/null || true
 fi
-sysctl -p > /dev/null 2>&1 || true
-sysctl -w net.ipv4.ip_forward=1 > /dev/null 2>&1 || true
-sysctl -w net.ipv6.conf.all.forwarding=1 > /dev/null 2>&1 || true
+
+# Enable BBR congestion control (if available)
+if modprobe -n tcp_bbr 2>/dev/null; then
+    if ! grep -q "tcp_bbr" /etc/modules-load.d/*.conf 2>/dev/null && ! grep -q "tcp_bbr" /etc/modules 2>/dev/null; then
+        echo "tcp_bbr" | tee -a /etc/modules-load.d/smite.conf > /dev/null 2>&1 || echo "tcp_bbr" >> /etc/modules 2>/dev/null || true
+        modprobe tcp_bbr 2>/dev/null || true
+        sysctl -w net.ipv4.tcp_congestion_control=bbr > /dev/null 2>&1 || true
+        sysctl -w net.core.default_qdisc=fq > /dev/null 2>&1 || true
+        echo "✅ BBR congestion control enabled"
+    else
+        echo "✅ BBR congestion control already enabled"
+    fi
+fi
 
 # Pull or build Docker image
 echo ""

@@ -184,6 +184,8 @@ class BackhaulManager:
             except (TypeError, ValueError):
                 control_port = 3080
             bind_ip = spec.get("bind_ip", "0.0.0.0")
+            if bind_ip == "::":
+                bind_ip = "0.0.0.0"
             bind_addr = f"{bind_ip}:{control_port}"
 
         ports = self._build_ports(spec)
@@ -222,12 +224,18 @@ class BackhaulManager:
         listen_port = spec.get("public_port") or spec.get("listen_port")
         target_addr = spec.get("target_addr")
         if not target_addr:
-            target_host = spec.get("target_host", "127.0.0.1")
+            use_ipv6 = spec.get("use_ipv6", False)
+            default_target = "::1" if use_ipv6 else "127.0.0.1"
+            target_host = spec.get("target_host", default_target)
             target_port = spec.get("target_port") or listen_port
             if target_port is None:
                 return []
-            target_addr = f"{target_host}:{target_port}"
+            from app.utils import format_address_port
+            target_addr = format_address_port(target_host, target_port)
+        use_ipv6 = spec.get("use_ipv6", False)
         listen_ip = spec.get("listen_ip", spec.get("public_ip", "0.0.0.0"))
+        if listen_ip == "::":
+            listen_ip = "0.0.0.0"
 
         if listen_port is None:
             return []

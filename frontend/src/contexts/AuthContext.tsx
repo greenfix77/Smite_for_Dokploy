@@ -28,7 +28,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [username, setUsername] = useState<string | null>(null)
 
   useEffect(() => {
-    // Check if user is already logged in
     const token = localStorage.getItem('token')
     const savedUsername = localStorage.getItem('username')
     

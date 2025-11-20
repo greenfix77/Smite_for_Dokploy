@@ -11,14 +11,38 @@ from pathlib import Path
 
 def get_compose_file():
     """Get docker-compose file path"""
-    node_dir = Path(__file__).parent.parent / "node"
-    return node_dir / "docker-compose.yml"
+    possible_roots = [
+        Path("/opt/smite-node"),
+        Path("/usr/local/node"),  # Legacy installation path
+        Path.cwd(),
+        Path(__file__).parent.parent / "node",
+    ]
+    
+    for node_dir in possible_roots:
+        compose_file = node_dir / "docker-compose.yml"
+        if compose_file.exists():
+            return compose_file
+    
+    # Return default path if not found
+    return Path("/opt/smite-node") / "docker-compose.yml"
 
 
 def get_env_file():
     """Get .env file path"""
-    node_dir = Path(__file__).parent.parent / "node"
-    return node_dir / ".env"
+    possible_roots = [
+        Path("/opt/smite-node"),
+        Path("/usr/local/node"),  # Legacy installation path
+        Path.cwd(),
+        Path(__file__).parent.parent / "node",
+    ]
+    
+    for node_dir in possible_roots:
+        env_file = node_dir / ".env"
+        if env_file.exists():
+            return env_file
+    
+    # Return default path if not found
+    return Path("/opt/smite-node") / ".env"
 
 
 def run_docker_compose(args, capture_output=False):
@@ -26,11 +50,25 @@ def run_docker_compose(args, capture_output=False):
     compose_file = get_compose_file()
     if not compose_file.exists():
         print(f"Error: docker-compose.yml not found at {compose_file}")
+        print(f"\nPlease ensure you're in the node directory or docker-compose.yml exists at:")
+        print(f"  - /opt/smite-node/docker-compose.yml")
+        print(f"  - /usr/local/node/docker-compose.yml")
+        print(f"  - {Path.cwd()}/docker-compose.yml")
         sys.exit(1)
     
-    cmd = ["docker", "compose", "-f", str(compose_file)] + args
-    result = subprocess.run(cmd, capture_output=capture_output, text=True)
-    return result
+    # Change to the directory containing docker-compose.yml so relative paths work
+    compose_dir = compose_file.parent
+    original_cwd = Path.cwd()
+    
+    try:
+        os.chdir(compose_dir)
+        cmd = ["docker", "compose", "-f", str(compose_file)] + args
+        result = subprocess.run(cmd, capture_output=capture_output, text=True, cwd=str(compose_dir))
+        if not capture_output and result.returncode != 0:
+            sys.exit(result.returncode)
+        return result
+    finally:
+        os.chdir(original_cwd)
 
 
 def cmd_status(args):
@@ -71,10 +109,26 @@ def cmd_status(args):
 
 
 def cmd_update(args):
-    """Update node"""
+    """Update node (pull images and recreate)"""
     print("Updating node...")
     run_docker_compose(["pull"])
     run_docker_compose(["up", "-d", "--force-recreate"])
+    print("Node updated.")
+
+
+def cmd_restart(args):
+    """Restart node (recreate container to pick up .env changes, no pull)"""
+    print("Restarting node...")
+    run_docker_compose(["stop", "smite-node"])
+    run_docker_compose(["rm", "-f", "smite-node"])
+    result = run_docker_compose(["up", "-d", "--no-deps", "--no-pull", "smite-node"], capture_output=True)
+    if result.returncode != 0 and "--no-pull" in result.stderr:
+        run_docker_compose(["up", "-d", "--no-deps", "smite-node"])
+    else:
+        if result.returncode != 0:
+            print(result.stderr)
+            sys.exit(result.returncode)
+    print("Node restarted. Tunnels will be restored by the panel.")
 
 
 def cmd_edit(args):
@@ -108,7 +162,9 @@ def main():
     
     subparsers.add_parser("status", help="Show node status")
     
-    subparsers.add_parser("update", help="Update node")
+    subparsers.add_parser("update", help="Update node (pull images and recreate)")
+    
+    subparsers.add_parser("restart", help="Restart node (recreate to pick up .env changes)")
     
     subparsers.add_parser("edit", help="Edit docker-compose.yml")
     
@@ -127,6 +183,8 @@ def main():
         cmd_status(args)
     elif args.command == "update":
         cmd_update(args)
+    elif args.command == "restart":
+        cmd_restart(args)
     elif args.command == "edit":
         cmd_edit(args)
     elif args.command == "edit-env":

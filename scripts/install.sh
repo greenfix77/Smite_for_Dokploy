@@ -93,7 +93,12 @@ else
     # Clone from GitHub
     echo "Cloning Smite from GitHub..."
     rm -rf "$INSTALL_DIR"
-    git clone --depth 1 https://github.com/zZedix/Smite.git "$INSTALL_DIR" || {
+    # Check if SMITE_VERSION is set to "next" to clone from next branch
+    GIT_BRANCH=""
+    if [ "${SMITE_VERSION:-latest}" = "next" ]; then
+        GIT_BRANCH="-b next"
+    fi
+    git clone --depth 1 $GIT_BRANCH https://github.com/zZedix/Smite.git "$INSTALL_DIR" || {
         echo -e "${RED}Error: Failed to clone repository${NC}"
         exit 1
     }

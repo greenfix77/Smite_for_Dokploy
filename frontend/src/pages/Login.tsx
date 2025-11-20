@@ -8,6 +8,7 @@ import SmiteLogoLight from '../assets/SmiteL.png'
 
 const Login = () => {
   const [username, setUsername] = useState('')
+  const [version, setVersion] = useState('v0.1.0')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -31,6 +32,19 @@ const Login = () => {
       document.documentElement.classList.remove('dark')
     }
   }, [darkMode])
+
+  useEffect(() => {
+    fetch('/api/status/version')
+      .then(res => res.json())
+      .then(data => {
+        if (data.version) {
+          setVersion(`v${data.version}`)
+        }
+      })
+      .catch(() => {
+        setVersion('v0.1.0')
+      })
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -174,7 +188,7 @@ const Login = () => {
               zZedix
             </a>
           </p>
-          <p className="mt-1">v0.1.0</p>
+          <p className="mt-1">{version}</p>
         </div>
       </div>
     </div>
