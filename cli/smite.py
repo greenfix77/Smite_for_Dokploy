@@ -77,7 +77,7 @@ def get_panel_url():
     return f"http://localhost:{port}"
 
 
-def run_docker_compose(args, capture_output=False):
+def run_docker_compose(args, capture_output=False, env_vars=None, profile=None):
     """Run docker compose command"""
     compose_file = get_compose_file()
     if not compose_file.exists():
@@ -86,7 +86,11 @@ def run_docker_compose(args, capture_output=False):
     
     compose_dir = compose_file.parent
     env_file = compose_dir / ".env"
-    env_vars = os.environ.copy()
+    if env_vars is None:
+        env_vars = os.environ.copy()
+    else:
+        env_vars = env_vars.copy()
+    
     if env_file.exists():
         for line in env_file.read_text().splitlines():
             line = line.strip()
@@ -102,6 +106,8 @@ def run_docker_compose(args, capture_output=False):
     
     try:
         os.chdir(compose_dir)
+        if profile:
+            env_vars["COMPOSE_PROFILES"] = profile
         cmd = ["docker", "compose", "-f", str(compose_file)] + args
         result = subprocess.run(cmd, capture_output=capture_output, text=True, cwd=str(compose_dir), env=env_vars)
         if not capture_output and result.returncode != 0:
@@ -714,28 +720,9 @@ def cmd_restart(args):
     result = subprocess.run(["docker", "ps", "--filter", "name=smite-nginx", "--format", "{{.Names}}"], capture_output=True, text=True)
     if result.stdout.strip():
         print("Restarting nginx...")
-        compose_file = get_compose_file()
-        compose_dir = compose_file.parent
-        env_file = compose_dir / ".env"
-        env_vars = os.environ.copy()
-        if env_file.exists():
-            for line in env_file.read_text().splitlines():
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    parts = line.split('=', 1)
-                    if len(parts) == 2:
-                        key = parts[0].strip()
-                        value = parts[1].strip()
-                        if key:
-                            env_vars[key] = value
-        
-        original_cwd = Path.cwd()
-        try:
-            os.chdir(compose_dir)
-            nginx_cmd = ["docker", "compose", "-f", str(compose_file), "--profile", "https", "restart", "nginx"]
-            subprocess.run(nginx_cmd, cwd=str(compose_dir), env=env_vars)
-        finally:
-            os.chdir(original_cwd)
+        run_docker_compose(["stop", "nginx"], profile="https")
+        run_docker_compose(["rm", "-f", "nginx"], profile="https")
+        run_docker_compose(["up", "-d", "--no-deps", "nginx"], profile="https")
     
     print("Panel restarted. Tunnels are preserved.")
 
