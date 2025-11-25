@@ -17,6 +17,73 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def prepare_frp_spec_for_node(spec: dict, node: Node, request: Request) -> dict:
+    """Prepare FRP spec for node by determining correct server_addr from node metadata"""
+    spec_for_node = spec.copy()
+    bind_port = spec_for_node.get("bind_port", 7000)
+    token = spec_for_node.get("token")
+    
+    # Get panel address from node's metadata (set during node registration)
+    panel_address = node.node_metadata.get("panel_address", "")
+    panel_host = None
+    
+    if panel_address:
+        # Parse panel_address (can be "host:port" or "http://host:port" or "https://host:port")
+        if "://" in panel_address:
+            panel_address = panel_address.split("://", 1)[1]
+        if ":" in panel_address:
+            panel_host = panel_address.split(":")[0]
+        else:
+            panel_host = panel_address
+    
+    # Fallback to spec panel_host if metadata doesn't have it
+    if not panel_host or panel_host in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
+        panel_host = spec_for_node.get("panel_host")
+        if panel_host and "://" in panel_host:
+            panel_host = panel_host.split("://", 1)[1]
+        if panel_host and ":" in panel_host:
+            panel_host = panel_host.split(":")[0]
+    
+    # Try X-Forwarded-Host header
+    if not panel_host or panel_host in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
+        forwarded_host = request.headers.get("X-Forwarded-Host")
+        if forwarded_host:
+            panel_host = forwarded_host.split(":")[0] if ":" in forwarded_host else forwarded_host
+    
+    # Try request hostname (but reject 0.0.0.0)
+    if not panel_host or panel_host in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
+        request_host = request.url.hostname
+        if request_host and request_host not in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
+            panel_host = request_host
+    
+    # Try environment variable as last resort
+    if not panel_host or panel_host in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
+        import os
+        panel_public_ip = os.getenv("PANEL_PUBLIC_IP") or os.getenv("PANEL_IP")
+        if panel_public_ip and panel_public_ip not in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
+            panel_host = panel_public_ip
+    
+    # If still no valid host, raise error
+    if not panel_host or panel_host in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
+        error_msg = f"Cannot determine panel address for FRP tunnel. Node's panel_address in metadata is: {panel_address}. Please ensure node has correct PANEL_ADDRESS configured or set PANEL_PUBLIC_IP environment variable on panel."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    from app.utils import is_valid_ipv6_address
+    if is_valid_ipv6_address(panel_host):
+        server_addr = f"[{panel_host}]"
+    else:
+        server_addr = panel_host
+    
+    spec_for_node["server_addr"] = server_addr
+    spec_for_node["server_port"] = int(bind_port)
+    if token:
+        spec_for_node["token"] = token
+    
+    logger.info(f"FRP spec prepared: server_addr={server_addr}, server_port={bind_port}, token={'set' if token else 'none'}, panel_host={panel_host} (from node panel_address: {panel_address})")
+    return spec_for_node
+
+
 class TunnelCreate(BaseModel):
     name: str
     core: str
@@ -349,66 +416,7 @@ async def create_tunnel(tunnel: TunnelCreate, request: Request, db: AsyncSession
                     logger.info(f"Chisel tunnel {db_tunnel.id}: server_url={server_url}, server_control_port={server_control_port}, reverse_port={reverse_port}, use_ipv6={use_ipv6}, panel_host={panel_host}")
             
             if needs_frp_server:
-                bind_port = spec_for_node.get("bind_port", 7000)
-                token = spec_for_node.get("token")
-                
-                # Get panel address from node's metadata (set during node registration)
-                panel_address = node.node_metadata.get("panel_address", "")
-                panel_host = None
-                
-                if panel_address:
-                    # Parse panel_address (can be "host:port" or "http://host:port" or "https://host:port")
-                    if "://" in panel_address:
-                        panel_address = panel_address.split("://", 1)[1]
-                    if ":" in panel_address:
-                        panel_host = panel_address.split(":")[0]
-                    else:
-                        panel_host = panel_address
-                
-                # Fallback to spec panel_host if metadata doesn't have it
-                if not panel_host or panel_host in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
-                    panel_host = spec_for_node.get("panel_host")
-                    if panel_host and "://" in panel_host:
-                        panel_host = panel_host.split("://", 1)[1]
-                    if panel_host and ":" in panel_host:
-                        panel_host = panel_host.split(":")[0]
-                
-                # Try X-Forwarded-Host header
-                if not panel_host or panel_host in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
-                    forwarded_host = request.headers.get("X-Forwarded-Host")
-                    if forwarded_host:
-                        panel_host = forwarded_host.split(":")[0] if ":" in forwarded_host else forwarded_host
-                
-                # Try request hostname (but reject 0.0.0.0)
-                if not panel_host or panel_host in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
-                    request_host = request.url.hostname
-                    if request_host and request_host not in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
-                        panel_host = request_host
-                
-                # Try environment variable as last resort
-                if not panel_host or panel_host in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
-                    import os
-                    panel_public_ip = os.getenv("PANEL_PUBLIC_IP") or os.getenv("PANEL_IP")
-                    if panel_public_ip and panel_public_ip not in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
-                        panel_host = panel_public_ip
-                
-                # If still no valid host, raise error
-                if not panel_host or panel_host in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
-                    error_msg = f"Cannot determine panel address for FRP tunnel {db_tunnel.id}. Node's panel_address in metadata is: {panel_address}. Please ensure node has correct PANEL_ADDRESS configured or set PANEL_PUBLIC_IP environment variable on panel."
-                    logger.error(error_msg)
-                    raise ValueError(error_msg)
-                
-                from app.utils import is_valid_ipv6_address
-                if is_valid_ipv6_address(panel_host):
-                    server_addr = f"[{panel_host}]"
-                else:
-                    server_addr = panel_host
-                
-                spec_for_node["server_addr"] = server_addr
-                spec_for_node["server_port"] = int(bind_port)
-                if token:
-                    spec_for_node["token"] = token
-                logger.info(f"FRP tunnel {db_tunnel.id}: server_addr={server_addr}, server_port={bind_port}, token={'set' if token else 'none'}, panel_host={panel_host} (from node panel_address: {panel_address})")
+                spec_for_node = prepare_frp_spec_for_node(spec_for_node, node, request)
             
             logger.info(f"Applying tunnel {db_tunnel.id} to node {node.id}")
             response = await client.send_to_node(
@@ -609,7 +617,9 @@ async def update_tunnel(
             needs_gost_forwarding = tunnel.type in ["tcp", "udp", "ws", "grpc", "tcpmux"] and tunnel.core == "xray"
             needs_rathole_server = tunnel.core == "rathole"
             needs_backhaul_server = tunnel.core == "backhaul"
-            needs_node_apply = tunnel.core in {"rathole", "backhaul", "chisel"}
+            needs_chisel_server = tunnel.core == "chisel"
+            needs_frp_server = tunnel.core == "frp"
+            needs_node_apply = tunnel.core in {"rathole", "backhaul", "chisel", "frp"}
             
             if needs_gost_forwarding:
                 listen_port = tunnel.spec.get("listen_port")
@@ -688,6 +698,51 @@ async def update_tunnel(
                         logger.error("Failed to restart Backhaul server for tunnel %s: %s", tunnel.id, exc, exc_info=True)
                         tunnel.status = "error"
                         tunnel.error_message = f"Backhaul server error: {exc}"
+            elif needs_chisel_server:
+                if hasattr(request.app.state, 'chisel_server_manager'):
+                    server_port = tunnel.spec.get("control_port") or (int(tunnel.spec.get("listen_port", 0)) + 10000)
+                    auth = tunnel.spec.get("auth") or tunnel.spec.get("token")
+                    fingerprint = tunnel.spec.get("fingerprint")
+                    use_ipv6 = tunnel.spec.get("use_ipv6", False)
+                    
+                    if server_port and auth and fingerprint:
+                        try:
+                            request.app.state.chisel_server_manager.stop_server(tunnel.id)
+                            request.app.state.chisel_server_manager.start_server(
+                                tunnel_id=tunnel.id,
+                                server_port=int(server_port),
+                                auth=auth,
+                                fingerprint=fingerprint,
+                                use_ipv6=bool(use_ipv6)
+                            )
+                            tunnel.status = "active"
+                            tunnel.error_message = None
+                        except Exception as e:
+                            logger.error(f"Failed to restart Chisel server: {e}")
+                            tunnel.status = "error"
+                            tunnel.error_message = f"Chisel server error: {str(e)}"
+            elif needs_frp_server:
+                if hasattr(request.app.state, 'frp_server_manager'):
+                    bind_port = tunnel.spec.get("bind_port", 7000)
+                    token = tunnel.spec.get("token")
+                    
+                    if bind_port:
+                        try:
+                            request.app.state.frp_server_manager.stop_server(tunnel.id)
+                            request.app.state.frp_server_manager.start_server(
+                                tunnel_id=tunnel.id,
+                                bind_port=int(bind_port),
+                                token=token
+                            )
+                            time.sleep(1.0)
+                            if not request.app.state.frp_server_manager.is_running(tunnel.id):
+                                raise RuntimeError("FRP server process not running")
+                            tunnel.status = "active"
+                            tunnel.error_message = None
+                        except Exception as e:
+                            logger.error(f"Failed to restart FRP server: {e}")
+                            tunnel.status = "error"
+                            tunnel.error_message = f"FRP server error: {str(e)}"
             
             if needs_node_apply and tunnel.node_id:
                 result = await db.execute(select(Node).where(Node.id == tunnel.node_id))
@@ -695,6 +750,11 @@ async def update_tunnel(
                 if node:
                     client = Hysteria2Client()
                     try:
+                        # Prepare spec for node (recalculate FRP server_addr if needed)
+                        spec_for_node = tunnel.spec.copy() if tunnel.spec else {}
+                        if tunnel.core == "frp":
+                            spec_for_node = prepare_frp_spec_for_node(spec_for_node, node, request)
+                        
                         response = await client.send_to_node(
                             node_id=node.id,
                             endpoint="/api/agent/tunnels/apply",
@@ -702,7 +762,7 @@ async def update_tunnel(
                                 "tunnel_id": tunnel.id,
                                 "core": tunnel.core,
                                 "type": tunnel.type,
-                                "spec": tunnel.spec
+                                "spec": spec_for_node
                             }
                         )
                         
@@ -740,7 +800,7 @@ async def update_tunnel(
 
 
 @router.post("/{tunnel_id}/apply")
-async def apply_tunnel(tunnel_id: str, db: AsyncSession = Depends(get_db)):
+async def apply_tunnel(tunnel_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     """Apply tunnel configuration to node"""
     result = await db.execute(select(Tunnel).where(Tunnel.id == tunnel_id))
     tunnel = result.scalar_one_or_none()
@@ -758,6 +818,11 @@ async def apply_tunnel(tunnel_id: str, db: AsyncSession = Depends(get_db)):
             node.node_metadata["api_address"] = f"http://{node.fingerprint}:8888"
             await db.commit()
         
+        # Prepare spec for node (recalculate FRP server_addr if needed)
+        spec_for_node = tunnel.spec.copy() if tunnel.spec else {}
+        if tunnel.core == "frp":
+            spec_for_node = prepare_frp_spec_for_node(spec_for_node, node, request)
+        
         response = await client.send_to_node(
             node_id=node.id,
             endpoint="/api/agent/tunnels/apply",
@@ -765,7 +830,7 @@ async def apply_tunnel(tunnel_id: str, db: AsyncSession = Depends(get_db)):
                 "tunnel_id": tunnel.id,
                 "core": tunnel.core,
                 "type": tunnel.type,
-                "spec": tunnel.spec
+                "spec": spec_for_node
             }
         )
         
