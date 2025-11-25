@@ -301,7 +301,43 @@ async def _restore_node_tunnels():
                     
                     spec_for_node = tunnel.spec.copy() if tunnel.spec else {}
                     
-                    if tunnel.core == "chisel":
+                    if tunnel.core == "frp":
+                        # Import here to avoid circular dependency
+                        from app.routers.tunnels import prepare_frp_spec_for_node
+                        from fastapi import Request
+                        # Create a mock request for prepare_frp_spec_for_node
+                        # We need the request object but don't have it in this context
+                        # So we'll use a simple approach - get panel address from node metadata
+                        panel_address = node.node_metadata.get("panel_address", "")
+                        if panel_address:
+                            if "://" in panel_address:
+                                panel_address = panel_address.split("://", 1)[1]
+                            if ":" in panel_address:
+                                panel_host = panel_address.split(":")[0]
+                            else:
+                                panel_host = panel_address
+                            
+                            from app.utils import is_valid_ipv6_address
+                            if is_valid_ipv6_address(panel_host):
+                                server_addr = f"[{panel_host}]"
+                            else:
+                                server_addr = panel_host
+                            
+                            bind_port = spec_for_node.get("bind_port", 7000)
+                            spec_for_node["server_addr"] = server_addr
+                            spec_for_node["server_port"] = int(bind_port)
+                            logger.info(f"FRP tunnel {tunnel.id} restore: server_addr={server_addr}, server_port={bind_port}")
+                        else:
+                            logger.warning(f"FRP tunnel {tunnel.id}: No panel_address in node metadata, using fallback")
+                            # Fallback to environment variable or default
+                            import os
+                            panel_public_ip = os.getenv("PANEL_PUBLIC_IP") or os.getenv("PANEL_IP")
+                            if panel_public_ip and panel_public_ip not in ["localhost", "127.0.0.1", "::1", "0.0.0.0", ""]:
+                                spec_for_node["server_addr"] = panel_public_ip
+                            else:
+                                logger.error(f"FRP tunnel {tunnel.id}: Cannot determine panel address for restore")
+                                continue
+                    elif tunnel.core == "chisel":
                         listen_port = spec_for_node.get("listen_port") or spec_for_node.get("remote_port") or spec_for_node.get("server_port")
                         use_ipv6 = spec_for_node.get("use_ipv6", False)
                         if listen_port:

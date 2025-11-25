@@ -48,38 +48,66 @@ async def get_core_health(request: Request, db: AsyncSession = Depends(get_db)):
         panel_healthy = False
         nodes_status = {}
         
+        result = await db.execute(select(Tunnel).where(Tunnel.core == core, Tunnel.status == "active"))
+        active_tunnels = result.scalars().all()
+        
         try:
             if core == "backhaul":
                 manager = getattr(request.app.state, "backhaul_manager", None)
                 if manager:
                     active_servers = manager.get_active_servers()
-                    panel_healthy = len(active_servers) > 0
-                    panel_status = "healthy" if panel_healthy else "no_active_servers"
+                    if len(active_tunnels) > 0:
+                        panel_healthy = len(active_servers) > 0
+                        panel_status = "healthy" if panel_healthy else "error"
+                    else:
+                        panel_healthy = True  # No tunnels means healthy (nothing to check)
+                        panel_status = "healthy"
+                else:
+                    panel_healthy = len(active_tunnels) == 0
+                    panel_status = "error" if len(active_tunnels) > 0 else "healthy"
             elif core == "rathole":
                 manager = getattr(request.app.state, "rathole_server_manager", None)
                 if manager:
                     active_servers = manager.get_active_servers()
-                    panel_healthy = len(active_servers) > 0
-                    panel_status = "healthy" if panel_healthy else "no_active_servers"
+                    if len(active_tunnels) > 0:
+                        panel_healthy = len(active_servers) > 0
+                        panel_status = "healthy" if panel_healthy else "error"
+                    else:
+                        panel_healthy = True  # No tunnels means healthy (nothing to check)
+                        panel_status = "healthy"
+                else:
+                    panel_healthy = len(active_tunnels) == 0
+                    panel_status = "error" if len(active_tunnels) > 0 else "healthy"
             elif core == "chisel":
                 manager = getattr(request.app.state, "chisel_server_manager", None)
                 if manager:
                     active_servers = manager.get_active_servers()
-                    panel_healthy = len(active_servers) > 0
-                    panel_status = "healthy" if panel_healthy else "no_active_servers"
+                    if len(active_tunnels) > 0:
+                        panel_healthy = len(active_servers) > 0
+                        panel_status = "healthy" if panel_healthy else "error"
+                    else:
+                        panel_healthy = True  # No tunnels means healthy (nothing to check)
+                        panel_status = "healthy"
+                else:
+                    panel_healthy = len(active_tunnels) == 0
+                    panel_status = "error" if len(active_tunnels) > 0 else "healthy"
             elif core == "frp":
                 manager = getattr(request.app.state, "frp_server_manager", None)
                 if manager:
                     active_servers = manager.get_active_servers()
-                    panel_healthy = len(active_servers) > 0
-                    panel_status = "healthy" if panel_healthy else "no_active_servers"
+                    if len(active_tunnels) > 0:
+                        panel_healthy = len(active_servers) > 0
+                        panel_status = "healthy" if panel_healthy else "error"
+                    else:
+                        panel_healthy = True  # No tunnels means healthy (nothing to check)
+                        panel_status = "healthy"
+                else:
+                    panel_healthy = len(active_tunnels) == 0
+                    panel_status = "error" if len(active_tunnels) > 0 else "healthy"
         except Exception as e:
             logger.error(f"Error checking {core} panel health: {e}")
             panel_status = "error"
             panel_healthy = False
-        
-        result = await db.execute(select(Tunnel).where(Tunnel.core == core, Tunnel.status == "active"))
-        active_tunnels = result.scalars().all()
         
         node_ids = set(t.node_id for t in active_tunnels if t.node_id)
         
@@ -331,36 +359,90 @@ async def _reset_core(core: str, app_or_request, db: AsyncSession):
                         "local_port": local_port
                     }
                 elif core == "chisel":
-                    server_port = tunnel.spec.get("server_port") or tunnel.spec.get("listen_port")
-                    server_addr = tunnel.spec.get("server_addr", "127.0.0.1")
-                    auth = tunnel.spec.get("auth")
-                    fingerprint = tunnel.spec.get("fingerprint")
-                    reverse_spec = tunnel.spec.get("reverse_spec", f"R:{tunnel.spec.get('remote_port')}:{tunnel.spec.get('local_addr', '127.0.0.1')}:{tunnel.spec.get('local_port')}")
-                    
-                    spec_for_node = {
-                        "server_url": f"http://{server_addr}:{server_port}",
-                        "reverse_spec": reverse_spec,
-                        "auth": auth,
-                        "fingerprint": fingerprint
-                    }
+                    listen_port = tunnel.spec.get("listen_port") or tunnel.spec.get("remote_port") or tunnel.spec.get("server_port")
+                    use_ipv6 = tunnel.spec.get("use_ipv6", False)
+                    if listen_port:
+                        server_control_port = tunnel.spec.get("control_port")
+                        if server_control_port:
+                            server_control_port = int(server_control_port)
+                        else:
+                            server_control_port = int(listen_port) + 10000
+                        reverse_port = int(listen_port)
+                        
+                        panel_host = tunnel.spec.get("panel_host")
+                        if not panel_host:
+                            panel_address = node.node_metadata.get("panel_address", "")
+                            if panel_address:
+                                if "://" in panel_address:
+                                    panel_address = panel_address.split("://", 1)[1]
+                                if ":" in panel_address:
+                                    panel_host = panel_address.split(":")[0]
+                                else:
+                                    panel_host = panel_address
+                        
+                        if not panel_host or panel_host in ["localhost", "127.0.0.1", "::1"]:
+                            import os
+                            panel_public_ip = os.getenv("PANEL_PUBLIC_IP") or os.getenv("PANEL_IP")
+                            if panel_public_ip and panel_public_ip not in ["localhost", "127.0.0.1", "::1", "0.0.0.0", ""]:
+                                panel_host = panel_public_ip
+                            else:
+                                panel_host = "127.0.0.1"
+                        
+                        from app.utils import is_valid_ipv6_address
+                        if is_valid_ipv6_address(panel_host):
+                            server_url = f"http://[{panel_host}]:{server_control_port}"
+                        else:
+                            server_url = f"http://{panel_host}:{server_control_port}"
+                        
+                        auth = tunnel.spec.get("auth")
+                        fingerprint = tunnel.spec.get("fingerprint")
+                        local_addr = tunnel.spec.get("local_addr", "127.0.0.1")
+                        local_port = tunnel.spec.get("local_port")
+                        reverse_spec = tunnel.spec.get("reverse_spec", f"R:{reverse_port}:{local_addr}:{local_port}")
+                        
+                        spec_for_node = {
+                            "server_url": server_url,
+                            "reverse_spec": reverse_spec,
+                            "auth": auth,
+                            "fingerprint": fingerprint
+                        }
+                    else:
+                        logger.warning(f"Chisel tunnel {tunnel.id}: Missing listen_port, skipping reset")
+                        continue
                 elif core == "frp":
-                    bind_port = tunnel.spec.get("bind_port", 7000)
-                    server_addr = tunnel.spec.get("server_addr", "127.0.0.1")
-                    token = tunnel.spec.get("token")
-                    local_ip = tunnel.spec.get("local_ip", "127.0.0.1")
-                    local_port = tunnel.spec.get("local_port")
-                    remote_port = tunnel.spec.get("remote_port") or tunnel.spec.get("listen_port")
-                    tunnel_type = tunnel.spec.get("type", "tcp")
-                    
-                    spec_for_node = {
-                        "server_addr": server_addr,
-                        "server_port": bind_port,
-                        "token": token,
-                        "local_ip": local_ip,
-                        "local_port": local_port,
-                        "remote_port": remote_port,
-                        "type": tunnel_type
-                    }
+                    # Use prepare_frp_spec_for_node to get correct server_addr
+                    from app.routers.tunnels import prepare_frp_spec_for_node
+                    from fastapi import Request
+                    # Create a minimal request object for prepare_frp_spec_for_node
+                    # We'll use node metadata to get panel address
+                    spec_for_node = tunnel.spec.copy()
+                    panel_address = node.node_metadata.get("panel_address", "")
+                    if panel_address:
+                        if "://" in panel_address:
+                            panel_address = panel_address.split("://", 1)[1]
+                        if ":" in panel_address:
+                            panel_host = panel_address.split(":")[0]
+                        else:
+                            panel_host = panel_address
+                        
+                        from app.utils import is_valid_ipv6_address
+                        if is_valid_ipv6_address(panel_host):
+                            server_addr = f"[{panel_host}]"
+                        else:
+                            server_addr = panel_host
+                        
+                        bind_port = spec_for_node.get("bind_port", 7000)
+                        spec_for_node["server_addr"] = server_addr
+                        spec_for_node["server_port"] = int(bind_port)
+                    else:
+                        # Fallback
+                        import os
+                        panel_public_ip = os.getenv("PANEL_PUBLIC_IP") or os.getenv("PANEL_IP")
+                        if panel_public_ip and panel_public_ip not in ["localhost", "127.0.0.1", "::1", "0.0.0.0", ""]:
+                            spec_for_node["server_addr"] = panel_public_ip
+                        else:
+                            logger.error(f"FRP tunnel {tunnel.id}: Cannot determine panel address for reset")
+                            continue
                 
                 await client.apply_tunnel(
                     node_id,

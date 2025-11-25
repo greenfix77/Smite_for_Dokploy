@@ -356,6 +356,22 @@ const Tunnels = () => {
                   </span>
                 </div>
               )}
+              {tunnel.core === 'frp' && (
+                <>
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">FRP Port</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {tunnel.spec?.bind_port || '7000'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Local Port</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {tunnel.spec?.local_port || 'N/A'}
+                    </span>
+                  </div>
+                </>
+              )}
               {tunnel.core === 'backhaul' && (
                 <>
                   {(() => {
