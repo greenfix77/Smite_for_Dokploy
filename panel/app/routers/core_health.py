@@ -255,15 +255,23 @@ async def manual_reset_core(core: str, request: Request, db: AsyncSession = Depe
         
         reset_time = datetime.utcnow()
         
-        if config:
-            config.last_reset = reset_time
-            if config.enabled and config.interval_minutes:
-                config.next_reset = reset_time + timedelta(minutes=config.interval_minutes)
-            await db.commit()
+        if not config:
+            config = CoreResetConfig(core=core, enabled=False, interval_minutes=10)
+            db.add(config)
+        
+        config.last_reset = reset_time
+        if config.enabled and config.interval_minutes:
+            config.next_reset = reset_time + timedelta(minutes=config.interval_minutes)
+        await db.commit()
+        await db.refresh(config)
         
         await _reset_core(core, request, db)
         
-        return {"status": "success", "message": f"{core} reset successfully"}
+        return {
+            "status": "success",
+            "message": f"{core} reset successfully",
+            "last_reset": config.last_reset.isoformat() if config.last_reset else None
+        }
     except Exception as e:
         logger.error(f"Error resetting {core}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

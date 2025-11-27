@@ -54,7 +54,18 @@ const CoreHealth = () => {
     
     setUpdating(core)
     try {
-      await api.post(`/core-health/reset/${core}`)
+      const response = await api.post(`/core-health/reset/${core}`)
+      
+      if (response.data?.last_reset) {
+        setConfigs(prevConfigs => 
+          prevConfigs.map(config => 
+            config.core === core 
+              ? { ...config, last_reset: response.data.last_reset }
+              : config
+          )
+        )
+      }
+      
       await fetchData()
     } catch (error) {
       console.error(`Failed to reset ${core}:`, error)
