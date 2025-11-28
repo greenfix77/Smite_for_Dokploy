@@ -439,6 +439,7 @@ async def _auto_reset_scheduler(app: FastAPI):
                             config.last_reset = now
                             config.next_reset = now + timedelta(minutes=config.interval_minutes)
                             await db.commit()
+                            await db.refresh(config)  # Ensure config is refreshed after commit
                             
                             await _reset_core(config.core, app, db)
                             

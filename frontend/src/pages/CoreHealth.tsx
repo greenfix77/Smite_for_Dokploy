@@ -56,6 +56,9 @@ const CoreHealth = () => {
             if (!clientTime || serverTime > clientTime) {
               // Use server timestamp as milliseconds since epoch
               updated[config.core] = serverTime
+              console.log(`[CoreHealth] Updated ${config.core} reset time: server=${new Date(serverTime).toISOString()}, client was=${clientTime ? new Date(clientTime).toISOString() : 'none'}`)
+            } else {
+              console.log(`[CoreHealth] Keeping client reset time for ${config.core}: client=${new Date(clientTime).toISOString()}, server=${new Date(serverTime).toISOString()}`)
             }
           }
         })
