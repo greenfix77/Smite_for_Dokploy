@@ -122,9 +122,8 @@ COPY --from=backhaul-bin /opt/backhaul/backhaul /usr/local/bin/backhaul
 COPY --from=deps /usr/local /usr/local
 COPY --from=frontend-build /app/dist ./static
 COPY panel .
-# Copy .git directory if it exists (for git tag extraction at runtime)
-# Note: This may fail if .git is in .dockerignore, which is fine - runtime will use VERSION file
-COPY .git ./.git 2>/dev/null || true
+# Note: .git is excluded in .dockerignore, so git tag extraction at runtime won't work in Docker
+# Version is set via SMITE_VERSION build arg (extract with: git describe --tags --abbrev=0)
 
 EXPOSE 8000 443/tcp 443/udp
 
