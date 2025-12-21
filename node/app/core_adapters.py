@@ -1177,30 +1177,56 @@ class AdapterManager:
         import json
         if self.tunnels_file.exists():
             try:
+                file_size = self.tunnels_file.stat().st_size
+                logger.info(f"Found tunnel config file at {self.tunnels_file} (size: {file_size} bytes)")
+                
+                if file_size == 0:
+                    logger.warning(f"Tunnel config file {self.tunnels_file} is empty")
+                    self.tunnel_configs = {}
+                    return
+                
                 with open(self.tunnels_file, 'r') as f:
-                    self.tunnel_configs = json.load(f)
+                    content = f.read()
+                    if not content.strip():
+                        logger.warning(f"Tunnel config file {self.tunnels_file} contains only whitespace")
+                        self.tunnel_configs = {}
+                        return
+                    
+                    self.tunnel_configs = json.loads(content)
+                
                 logger.info(f"Loaded {len(self.tunnel_configs)} persisted tunnel configurations from {self.tunnels_file}")
                 for tunnel_id, config in self.tunnel_configs.items():
                     core = config.get("core", "unknown")
                     mode = config.get("spec", {}).get("mode", "N/A")
-                    logger.debug(f"  - Tunnel {tunnel_id}: core={core}, mode={mode}")
+                    logger.info(f"  - Tunnel {tunnel_id}: core={core}, mode={mode}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse tunnel configurations JSON from {self.tunnels_file}: {e}", exc_info=True)
+                self.tunnel_configs = {}
             except Exception as e:
-                logger.warning(f"Failed to load tunnel configurations: {e}", exc_info=True)
+                logger.error(f"Failed to load tunnel configurations from {self.tunnels_file}: {e}", exc_info=True)
                 self.tunnel_configs = {}
         else:
-            logger.info(f"No tunnel configurations file found at {self.tunnels_file}")
+            logger.info(f"No tunnel configurations file found at {self.tunnels_file} (this is normal for new nodes)")
             self.tunnel_configs = {}
     
     def _save_tunnels(self):
         """Save tunnel configurations to disk"""
         import json
+        import os
         try:
             logger.info(f"Saving {len(self.tunnel_configs)} tunnel configurations to {self.tunnels_file}")
-            with open(self.tunnels_file, 'w') as f:
+            
+            temp_file = self.tunnels_file.with_suffix('.tmp')
+            with open(temp_file, 'w') as f:
                 json.dump(self.tunnel_configs, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            
+            temp_file.replace(self.tunnels_file)
+            
             if self.tunnels_file.exists():
                 file_size = self.tunnels_file.stat().st_size
-                logger.info(f"Successfully saved tunnel configurations to {self.tunnels_file} (size: {file_size} bytes)")
+                logger.info(f"Successfully saved tunnel configurations to {self.tunnels_file} (size: {file_size} bytes, tunnels: {list(self.tunnel_configs.keys())})")
             else:
                 logger.error(f"File {self.tunnels_file} was not created after write operation")
         except Exception as e:
@@ -1210,6 +1236,11 @@ class AdapterManager:
         """Restore all persisted tunnels on startup"""
         import logging
         logger = logging.getLogger(__name__)
+        
+        logger.info(f"Starting tunnel restoration from {self.tunnels_file}")
+        logger.info(f"Config directory exists: {self.config_dir.exists()}, writable: {os.access(self.config_dir, os.W_OK) if self.config_dir.exists() else False}")
+        logger.info(f"Tunnels file exists: {self.tunnels_file.exists()}")
+        
         self._load_tunnels()
         
         if not self.tunnel_configs:
