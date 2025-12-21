@@ -68,6 +68,20 @@ jobs:
             echo "result=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check if version tag exists
+        id: has-version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "has_version=true" >> "$GITHUB_OUTPUT"
+          else
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [ -n "$LATEST_TAG" ] && [[ "$LATEST_TAG" =~ ^v[0-9] ]]; then
+              echo "has_version=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "has_version=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
       - name: Extract version
         id: version
         run: |
@@ -94,20 +108,6 @@ jobs:
             echo "should_tag=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_tag=false" >> "$GITHUB_OUTPUT"
-          fi
-      
-      - name: Check if version tag exists
-        id: has-version
-        run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "has_version=true" >> "$GITHUB_OUTPUT"
-          else
-            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-            if [ -n "$LATEST_TAG" ] && [[ "$LATEST_TAG" =~ ^v[0-9] ]]; then
-              echo "has_version=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "has_version=false" >> "$GITHUB_OUTPUT"
-            fi
           fi
 
       - name: Extract metadata for panel image
