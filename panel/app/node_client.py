@@ -70,36 +70,36 @@ class NodeClient:
             comm_type = "FRP" if using_frp else "HTTP"
             logger.debug(f"[{comm_type}] Sending request to node {node_id}: {endpoint}")
             
-            # For FRP connections, verify the tunnel is ready with a quick health check
-            if using_frp:
-                try:
-                    async with httpx.AsyncClient(timeout=httpx.Timeout(5.0), verify=False) as test_client:
-                        test_url = f"{node_address.rstrip('/')}/api/agent/status"
-                        await test_client.get(test_url)
-                except Exception as e:
-                    logger.warning(f"[FRP] Tunnel health check failed for node {node_id}, will retry: {e}")
-            
             try:
                 # Retry logic for FRP connections which may need a moment to stabilize
-                max_retries = 3 if using_frp else 1
+                max_retries = 5 if using_frp else 1
                 last_error = None
                 
                 for attempt in range(max_retries):
                     try:
-                        async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:
+                        # For FRP, use a new connection each time to avoid connection reuse issues
+                        if using_frp and attempt > 0:
+                            await asyncio.sleep(2.0)  # Longer delay for FRP retries
+                            logger.info(f"[FRP] Retry {attempt + 1}/{max_retries} for node {node_id} via FRP tunnel")
+                        
+                        async with httpx.AsyncClient(
+                            timeout=self.timeout, 
+                            verify=False,
+                            limits=httpx.Limits(max_keepalive_connections=0 if using_frp else 5)  # Disable keep-alive for FRP
+                        ) as client:
                             response = await client.post(url, json=data)
                             response.raise_for_status()
                             return response.json()
                     except httpx.RequestError as e:
                         last_error = e
                         if attempt < max_retries - 1:
-                            await asyncio.sleep(1.0)  # Longer delay for FRP retries
-                            logger.debug(f"[{comm_type}] Retry {attempt + 1}/{max_retries} for node {node_id}")
+                            if not using_frp:
+                                await asyncio.sleep(0.5)
                             continue
                         else:
                             error_msg = f"Network error: {str(e)}"
                             if using_frp:
-                                error_msg += f" (FRP tunnel may not be ready, tried {max_retries} times)"
+                                error_msg += f" (FRP tunnel connection failed after {max_retries} attempts. Check FRP server logs.)"
                             return {"status": "error", "message": error_msg}
                 
                 # Should not reach here, but just in case
