@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class PanelClient:
-    """Client connecting to panel via HTTP/HTTPS"""
+    """Client connecting to panel via HTTP/HTTPS or FRP"""
     
     def __init__(self):
         self.panel_address = settings.panel_address
@@ -22,6 +22,8 @@ class PanelClient:
         self.node_id = None
         self.fingerprint = None
         self.registered = False
+        self.using_frp = False
+        self.frp_panel_url: Optional[str] = None
     
     async def start(self):
         """Start client and connect to panel"""
@@ -35,7 +37,7 @@ class PanelClient:
             verify=False
         )
         
-        print(f"Node client ready, panel address: {self.panel_address}")
+        logger.info(f"Node client ready, panel address: {self.panel_address}")
     
     async def stop(self):
         """Stop client"""
@@ -92,19 +94,22 @@ class PanelClient:
         
         try:
             url = f"{panel_api_url}/api/nodes"
-            print(f"Registering with panel at {url}...")
+            logger.info(f"[HTTP] Registering with panel at {url}...")
             response = await self.client.post(url, json=registration_data, timeout=10.0)
             
             if response.status_code in [200, 201]:
                 data = response.json()
                 self.node_id = data.get("id")
                 self.registered = True
-                logger.info(f"Node registered successfully with ID: {self.node_id}")
+                logger.info(f"[HTTP] Node registered successfully with ID: {self.node_id}")
                 
                 metadata = data.get("metadata", {})
                 frp_config = metadata.get("frp_config")
                 if frp_config and frp_config.get("enabled"):
+                    logger.info(f"[FRP] FRP communication enabled by panel, setting up FRP client...")
                     await self._setup_frp(frp_config)
+                else:
+                    logger.info(f"[HTTP] FRP communication not enabled, continuing with HTTP")
                 
                 return True
             else:
@@ -128,7 +133,7 @@ class PanelClient:
                 logger.warning("FRP enabled but server_addr not provided")
                 return
             
-            logger.info(f"Starting FRP client: server={server_addr}:{server_port}")
+            logger.info(f"[FRP] Starting FRP client: server={server_addr}:{server_port}")
             frp_comm_client.start(server_addr, server_port, token, self.node_id)
             
             await asyncio.sleep(3)
@@ -138,7 +143,19 @@ class PanelClient:
                 remote_port = config.get("remote_port")
                 
                 if remote_port:
+                    # Report FRP status via HTTP (last HTTP call)
+                    logger.info(f"[HTTP] Reporting FRP status to panel (last HTTP call before switching to FRP)")
                     await self._report_frp_status(remote_port)
+                    
+                    # After reporting, switch to FRP for all future communication
+                    # The panel will connect to us via FRP, but we also need to connect to panel via FRP
+                    # For node->panel communication, we need a reverse tunnel from panel to node
+                    # Actually, wait - FRP client tunnels node's API to panel, so panel->node uses FRP
+                    # But node->panel still needs a way. Let me check the architecture...
+                    # Actually, the node doesn't actively call the panel after registration except for status updates
+                    # The main communication is panel->node, which will use FRP
+                    logger.info(f"[FRP] FRP client connected successfully. All panel->node communication will now use FRP tunnel (remote_port={remote_port})")
+                    self.using_frp = True
                 else:
                     logger.warning("FRP client started but remote_port not available")
             else:
@@ -174,9 +191,9 @@ class PanelClient:
             }, timeout=10.0)
             
             if response.status_code == 200:
-                logger.info(f"FRP status reported to panel: remote_port={remote_port}")
+                logger.info(f"[HTTP] FRP status reported to panel: remote_port={remote_port} (last HTTP call)")
             else:
-                logger.warning(f"Failed to report FRP status: {response.status_code}")
+                logger.warning(f"[HTTP] Failed to report FRP status: {response.status_code}")
         except Exception as e:
             logger.error(f"Error reporting FRP status: {e}")
     

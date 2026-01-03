@@ -124,7 +124,7 @@ proxies:
                 self.enabled = False
                 raise RuntimeError(error_msg)
             
-            logger.info(f"FRP communication client started (PID: {self.process.pid}, remote_port={self.remote_port})")
+            logger.info(f"[FRP] FRP communication client started (PID: {self.process.pid}, remote_port={self.remote_port})")
             
             if self.remote_port:
                 import time
@@ -133,7 +133,8 @@ proxies:
                     with open(self.log_file, 'r') as f:
                         log_content = f.read()
                         if 'remotePort' in log_content or 'start proxy success' in log_content.lower():
-                            logger.info(f"FRP client connected, remote port: {self.remote_port}")
+                            logger.info(f"[FRP] FRP client connected successfully, remote port: {self.remote_port}")
+                            logger.info(f"[FRP] Node API is now accessible to panel via FRP tunnel at 127.0.0.1:{self.remote_port}")
             
             return True
             
@@ -154,9 +155,9 @@ proxies:
             except Exception as e:
                 logger.warning(f"Error stopping FRP communication client: {e}")
             finally:
-                self.process = None
-                self.enabled = False
-                logger.info("FRP communication client stopped")
+            self.process = None
+            self.enabled = False
+            logger.info("[FRP] FRP communication client stopped")
     
     def is_running(self) -> bool:
         """Check if client is running"""

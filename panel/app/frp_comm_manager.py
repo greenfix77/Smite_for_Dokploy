@@ -105,7 +105,8 @@ class FrpCommManager:
                 return False
             
             self.enabled = True
-            logger.info(f"FRP communication server started on port {port} (PID: {self.process.pid})")
+            logger.info(f"[FRP] FRP communication server started on port {port} (PID: {self.process.pid})")
+            logger.info(f"[FRP] Panel is now ready to accept FRP connections from nodes")
             return True
             
         except Exception as e:
@@ -125,9 +126,9 @@ class FrpCommManager:
             except Exception as e:
                 logger.warning(f"Error stopping FRP communication server: {e}")
             finally:
-                self.process = None
-                self.enabled = False
-                logger.info("FRP communication server stopped")
+            self.process = None
+            self.enabled = False
+            logger.info("[FRP] FRP communication server stopped")
     
     def is_running(self) -> bool:
         """Check if server is running"""

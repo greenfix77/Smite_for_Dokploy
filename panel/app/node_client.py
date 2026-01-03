@@ -1,12 +1,15 @@
 """Client for panel to communicate with nodes"""
 import httpx
 import ssl
-from typing import Dict, Any, Optional
+import logging
+from typing import Dict, Any, Optional, Tuple
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import AsyncSessionLocal
 from app.models import Node, Settings
+
+logger = logging.getLogger(__name__)
 
 
 class NodeClient:
@@ -24,19 +27,30 @@ class NodeClient:
                 return setting.value
         return None
     
-    async def _get_node_address(self, node: Node) -> str:
-        """Get node address (direct or via FRP)"""
+    async def _get_node_address(self, node: Node) -> Tuple[str, bool]:
+        """
+        Get node address (direct or via FRP)
+        Returns: (address, using_frp)
+        """
         frp_settings = await self._get_frp_settings()
         
         if frp_settings and frp_settings.get("enabled"):
             frp_remote_port = node.node_metadata.get("frp_remote_port") if node.node_metadata else None
             if frp_remote_port:
-                return f"http://127.0.0.1:{frp_remote_port}"
+                # FRP is enabled and node has reported its remote port - use FRP only
+                logger.info(f"[FRP] Using FRP tunnel to communicate with node {node.id} (remote_port={frp_remote_port})")
+                return (f"http://127.0.0.1:{frp_remote_port}", True)
+            else:
+                # FRP is enabled but node hasn't reported its remote port yet (during initial setup)
+                logger.warning(f"[HTTP] FRP enabled but node {node.id} has no frp_remote_port yet, temporarily using HTTP")
+                logger.warning(f"[HTTP] This should only happen during node registration. After FRP setup, all communication will use FRP.")
         
+        # FRP is not enabled - use HTTP
         node_address = node.node_metadata.get("api_address", f"http://localhost:8888") if node.node_metadata else f"http://localhost:8888"
         if not node_address.startswith("http"):
             node_address = f"http://{node_address}"
-        return node_address
+        logger.info(f"[HTTP] Using direct HTTP to communicate with node {node.id} at {node_address}")
+        return (node_address, False)
     
     async def send_to_node(self, node_id: str, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -49,8 +63,11 @@ class NodeClient:
             if not node:
                 return {"status": "error", "message": f"Node {node_id} not found"}
             
-            node_address = await self._get_node_address(node)
+            node_address, using_frp = await self._get_node_address(node)
             url = f"{node_address.rstrip('/')}{endpoint}"
+            
+            comm_type = "FRP" if using_frp else "HTTP"
+            logger.debug(f"[{comm_type}] Sending request to node {node_id}: {endpoint}")
             
             try:
                 async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:
@@ -77,8 +94,11 @@ class NodeClient:
             if not node:
                 return {"status": "error", "message": f"Node {node_id} not found"}
             
-            node_address = await self._get_node_address(node)
+            node_address, using_frp = await self._get_node_address(node)
             url = f"{node_address.rstrip('/')}/api/agent/status"
+            
+            comm_type = "FRP" if using_frp else "HTTP"
+            logger.debug(f"[{comm_type}] Getting tunnel status from node {node_id}")
             
             try:
                 async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:
