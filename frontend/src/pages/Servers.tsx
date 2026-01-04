@@ -295,6 +295,7 @@ interface AddServerModalProps {
 }
 
 const AddServerModal = ({ onClose, onSuccess }: AddServerModalProps) => {
+  const { t } = useLanguage()
   const [name, setName] = useState('')
   const [ipAddress, setIpAddress] = useState('')
   const [apiPort, setApiPort] = useState('8888')

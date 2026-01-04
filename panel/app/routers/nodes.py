@@ -175,15 +175,27 @@ async def list_nodes(db: AsyncSession = Depends(get_db)):
             else:
                 error_msg = response.get("message", "Node disconnected") if response else "Node not responding"
                 if "timeout" in error_msg.lower() or "connection" in error_msg.lower():
-                    connection_status = "reconnecting"
+                    if node.node_metadata and node.node_metadata.get("frp_connected"):
+                        connection_status = "connected"
+                    else:
+                        connection_status = "reconnecting"
                 else:
                     connection_status = "failed"
         except httpx.ConnectError:
-            connection_status = "connecting"
+            if node.node_metadata and node.node_metadata.get("frp_connected"):
+                connection_status = "connected"
+            else:
+                connection_status = "connecting"
         except httpx.TimeoutException:
-            connection_status = "reconnecting"
+            if node.node_metadata and node.node_metadata.get("frp_connected"):
+                connection_status = "connected"
+            else:
+                connection_status = "reconnecting"
         except Exception:
-            connection_status = "failed"
+            if node.node_metadata and node.node_metadata.get("frp_connected"):
+                connection_status = "connected"
+            else:
+                connection_status = "failed"
         
         metadata = node.node_metadata.copy() if node.node_metadata else {}
         metadata["connection_status"] = connection_status
