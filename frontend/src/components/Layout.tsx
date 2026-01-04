@@ -191,7 +191,7 @@ const Layout = ({ children }: LayoutProps) => {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900" dir={dir}>
+        <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900" dir="ltr">
           {/* Mobile Header */}
           <div className="lg:hidden sticky top-0 z-30 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center justify-between shadow-sm">
             <button

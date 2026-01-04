@@ -246,7 +246,7 @@ const Tunnels = () => {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mb-4"></div>
-          <p className="text-gray-500 dark:text-gray-400">Loading tunnels...</p>
+          <p className="text-gray-500 dark:text-gray-400">{t.tunnels.loadingTunnels}</p>
         </div>
       </div>
     )
@@ -437,6 +437,7 @@ interface EditTunnelModalProps {
 }
 
 const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) => {
+  const { t } = useLanguage()
   const forwardToParsed = tunnel.spec?.forward_to ? parseAddressPort(tunnel.spec.forward_to) : null
   const remoteIp = tunnel.spec?.remote_ip || forwardToParsed?.host || '127.0.0.1'
   const remotePort = tunnel.spec?.remote_port || forwardToParsed?.port || 8080
@@ -588,7 +589,7 @@ const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) =
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Name
+              {t.tunnels.name}
             </label>
             <input
               type="text"
@@ -602,7 +603,7 @@ const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) =
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Remote IP
+                  {t.tunnels.remoteIP}
                 </label>
                 <input
                   type="text"
@@ -614,7 +615,7 @@ const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) =
                   placeholder="127.0.0.1 or [2001:db8::1]"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Target server IP address (IPv4 or IPv6)
+                  {t.tunnels.remoteIPDescription}
                 </p>
               </div>
               <div>
@@ -877,7 +878,7 @@ const EditTunnelModal = ({ tunnel, onClose, onSuccess }: EditTunnelModalProps) =
               onClick={onClose}
               className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
             >
-              Cancel
+              {t.tunnels.cancel}
             </button>
             <button
               type="submit"
@@ -1154,7 +1155,7 @@ const AddTunnelModal = ({ nodes, servers, onClose, onSuccess }: AddTunnelModalPr
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Iran Node
+                {t.tunnels.iranNode}
               </label>
               <select
                 value={formData.iran_node_id || formData.node_id}
@@ -1162,7 +1163,7 @@ const AddTunnelModal = ({ nodes, servers, onClose, onSuccess }: AddTunnelModalPr
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
                 required={formData.core === 'rathole' || formData.core === 'backhaul' || formData.core === 'frp' || formData.core === 'chisel'}
               >
-                <option value="">Select an Iran node</option>
+                <option value="">{t.tunnels.selectIranNode}</option>
                 {nodes.map((node) => (
                   <option key={node.id} value={node.id}>
                     {node.name}
@@ -1172,7 +1173,7 @@ const AddTunnelModal = ({ nodes, servers, onClose, onSuccess }: AddTunnelModalPr
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Foreign Server
+                {t.tunnels.foreignServer}
               </label>
               <select
                 value={formData.foreign_node_id}
@@ -1180,7 +1181,7 @@ const AddTunnelModal = ({ nodes, servers, onClose, onSuccess }: AddTunnelModalPr
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
                 required={formData.core === 'rathole' || formData.core === 'backhaul' || formData.core === 'frp' || formData.core === 'chisel'}
               >
-                <option value="">Select a foreign server</option>
+                <option value="">{t.tunnels.selectForeignServer}</option>
                 {servers.map((server) => (
                   <option key={server.id} value={server.id}>
                     {server.name}
@@ -1193,7 +1194,7 @@ const AddTunnelModal = ({ nodes, servers, onClose, onSuccess }: AddTunnelModalPr
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Core
+                {t.tunnels.core}
               </label>
               <select
                 value={formData.core}
@@ -1209,7 +1210,7 @@ const AddTunnelModal = ({ nodes, servers, onClose, onSuccess }: AddTunnelModalPr
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Type
+                {t.tunnels.type}
               </label>
               <select
                 value={formData.type}
@@ -1259,7 +1260,7 @@ const AddTunnelModal = ({ nodes, servers, onClose, onSuccess }: AddTunnelModalPr
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Remote IP
+                  {t.tunnels.remoteIP}
                 </label>
                 <input
                   type="text"
@@ -1271,12 +1272,12 @@ const AddTunnelModal = ({ nodes, servers, onClose, onSuccess }: AddTunnelModalPr
                   placeholder="127.0.0.1 or [2001:db8::1]"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Target server IP address (IPv4 or IPv6)
+                  {t.tunnels.remoteIPDescription}
                 </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Ports
+                  {t.tunnels.ports}
                 </label>
                 <input
                   type="text"
@@ -1289,7 +1290,7 @@ const AddTunnelModal = ({ nodes, servers, onClose, onSuccess }: AddTunnelModalPr
                   required
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Ports (comma-separated, same for panel and target server)
+                  {t.tunnels.portsDescription}
                 </p>
               </div>
             </div>
@@ -1517,7 +1518,7 @@ const AddTunnelModal = ({ nodes, servers, onClose, onSuccess }: AddTunnelModalPr
               onClick={onClose}
               className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
             >
-              Cancel
+              {t.tunnels.cancel}
             </button>
             <button
               type="submit"

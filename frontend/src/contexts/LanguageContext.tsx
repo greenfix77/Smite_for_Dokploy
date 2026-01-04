@@ -60,6 +60,19 @@ interface Translations {
     title: string
     subtitle: string
     createTunnel: string
+    name: string
+    foreignServer: string
+    iranNode: string
+    type: string
+    core: string
+    ports: string
+    portsDescription: string
+    remoteIP: string
+    remoteIPDescription: string
+    selectForeignServer: string
+    selectIranNode: string
+    cancel: string
+    loadingTunnels: string
   }
   coreHealth: {
     title: string
@@ -167,6 +180,19 @@ const translations: Record<Language, Translations> = {
       title: 'Tunnels',
       subtitle: 'Manage your tunnel connections',
       createTunnel: 'Create Tunnel',
+      name: 'Name',
+      foreignServer: 'Foreign Server',
+      iranNode: 'Iran Node',
+      type: 'Type',
+      core: 'Core',
+      ports: 'Ports',
+      portsDescription: 'Ports (comma-separated, same for panel and target server)',
+      remoteIP: 'Remote IP',
+      remoteIPDescription: 'Target server IP address (IPv4 or IPv6)',
+      selectForeignServer: 'Select a foreign server',
+      selectIranNode: 'Select an Iran node',
+      cancel: 'Cancel',
+      loadingTunnels: 'Loading tunnels...',
     },
     coreHealth: {
       title: 'Core Health',
@@ -272,6 +298,19 @@ const translations: Record<Language, Translations> = {
       title: 'تونل‌ها',
       subtitle: 'مدیریت اتصالات تونل',
       createTunnel: 'ایجاد تونل',
+      name: 'نام',
+      foreignServer: 'سرور خارجی',
+      iranNode: 'نود ایران',
+      type: 'نوع',
+      core: 'هسته',
+      ports: 'پورت‌ها',
+      portsDescription: 'پورت‌ها (جدا شده با کاما، یکسان برای پنل و سرور هدف)',
+      remoteIP: 'IP از راه دور',
+      remoteIPDescription: 'آدرس IP سرور هدف (IPv4 یا IPv6)',
+      selectForeignServer: 'یک سرور خارجی انتخاب کنید',
+      selectIranNode: 'یک نود ایران انتخاب کنید',
+      cancel: 'لغو',
+      loadingTunnels: 'در حال بارگذاری تونل‌ها...',
     },
     coreHealth: {
       title: 'سلامت هسته',
