@@ -261,9 +261,20 @@ class TelegramBot:
             
             await self.start_backup_task()
             
-            logger.info("Telegram bot started successfully")
+            # Initialize and start the application (PTB v20+ async lifecycle)
+            await self.application.initialize()
+            await self.application.start()
             
-            asyncio.create_task(self._run_polling())
+            # Start polling using updater (PTB v20+ way for existing event loop)
+            if hasattr(self.application, 'updater') and self.application.updater:
+                await self.application.updater.start_polling(drop_pending_updates=True)
+                logger.info("Telegram bot polling started successfully")
+            else:
+                logger.error("Application updater not available. Polling cannot be started.")
+                await self.stop()
+                return False
+            
+            logger.info("Telegram bot started successfully (polling mode)")
             
             return True
         except Exception as e:
@@ -271,26 +282,32 @@ class TelegramBot:
             await self.stop()
             return False
     
-    async def _run_polling(self):
-        """Run polling in background task"""
-        try:
-            await self.application.run_polling(drop_pending_updates=True, stop_signals=None)
-        except Exception as e:
-            logger.error(f"Error in polling: {e}", exc_info=True)
-    
     async def stop(self):
-        """Stop Telegram bot"""
+        """Stop Telegram bot (idempotent - safe to call multiple times)"""
         await self.stop_backup_task()
         
-        if self.application:
-            try:
-                await self.application.stop()
-                await self.application.shutdown()
-            except Exception as e:
-                logger.warning(f"Error stopping Telegram bot: {e}")
-            finally:
-                self.application = None
-                logger.info("Telegram bot stopped")
+        if not self.application:
+            return  # Already stopped
+        
+        try:
+            # Stop updater first (if it exists and is running)
+            if hasattr(self.application, 'updater') and self.application.updater:
+                try:
+                    # Check if updater is running before stopping
+                    if hasattr(self.application.updater, 'running') and self.application.updater.running:
+                        await self.application.updater.stop()
+                        logger.info("Telegram bot updater stopped")
+                except Exception as e:
+                    logger.warning(f"Error stopping updater: {e}")
+            
+            # Stop and shutdown application
+            await self.application.stop()
+            await self.application.shutdown()
+        except Exception as e:
+            logger.warning(f"Error stopping Telegram bot: {e}")
+        finally:
+            self.application = None
+            logger.info("Telegram bot stopped")
     
     async def start_backup_task(self):
         """Start automatic backup task"""
