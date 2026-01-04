@@ -381,24 +381,42 @@ const Tunnels = () => {
 
                     {/* Transmission Type and Core Port */}
                     <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 mb-2">
-                      {tunnel.type && (
+                      {tunnel.type && tunnel.type.toLowerCase() !== tunnel.core.toLowerCase() && (
                         <div className="flex items-center gap-1.5">
-                          <span className="font-medium">Type:</span>
+                          <span className="font-medium">Transmission:</span>
                           <span className="text-gray-700 dark:text-gray-300 uppercase">{tunnel.type}</span>
                         </div>
                       )}
-                      {tunnel.spec?.listen_port && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-medium">Core Port:</span>
-                          <span className="text-gray-700 dark:text-gray-300 font-mono">{tunnel.spec.listen_port}</span>
-                        </div>
-                      )}
-                      {tunnel.spec?.remote_port && !tunnel.spec?.listen_port && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-medium">Core Port:</span>
-                          <span className="text-gray-700 dark:text-gray-300 font-mono">{tunnel.spec.remote_port}</span>
-                        </div>
-                      )}
+                      {(() => {
+                        let corePort = null
+                        if (tunnel.core === 'rathole') {
+                          if (tunnel.spec?.bind_addr) {
+                            const match = tunnel.spec.bind_addr.match(/:(\d+)$/)
+                            if (match) corePort = match[1]
+                          }
+                          if (!corePort && tunnel.spec?.control_port) {
+                            corePort = tunnel.spec.control_port
+                          }
+                          if (!corePort) {
+                            const remoteAddr = tunnel.spec?.remote_addr || ''
+                            const match = remoteAddr.match(/:(\d+)$/)
+                            if (match) corePort = match[1]
+                          }
+                          if (!corePort) corePort = '23333'
+                        } else if (tunnel.core === 'chisel') {
+                          corePort = tunnel.spec?.server_port || tunnel.spec?.control_port
+                        } else if (tunnel.core === 'backhaul') {
+                          corePort = tunnel.spec?.control_port || tunnel.spec?.public_port || '3080'
+                        } else if (tunnel.core === 'frp') {
+                          corePort = tunnel.spec?.bind_port || '7000'
+                        }
+                        return corePort ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-medium">Core Port:</span>
+                            <span className="text-gray-700 dark:text-gray-300 font-mono">{corePort}</span>
+                          </div>
+                        ) : null
+                      })()}
                     </div>
 
                     {/* Node and Server Info */}
