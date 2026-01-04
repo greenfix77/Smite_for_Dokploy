@@ -437,44 +437,28 @@ Use buttons in messages to interact with nodes and tunnels."""
             backup_dir.mkdir(exist_ok=True)
             
             # Find panel root directory
-            panel_root = Path(os.getcwd())
-            if not (panel_root / "data").exists():
-                for possible_root in [Path("/opt/smite"), Path(__file__).parent.parent.parent]:
-                    if (possible_root / "data").exists():
-                        panel_root = possible_root
-                        break
+            data_dir = Path("/opt/smite/panel/data")
+            if not data_dir.exists():
+                panel_root = Path(os.getcwd())
+                if not (panel_root / "data").exists():
+                    for possible_root in [Path("/opt/smite"), Path(__file__).parent.parent.parent]:
+                        if (possible_root / "data").exists():
+                            panel_root = possible_root
+                            break
+                data_dir = panel_root / "data"
             
-            db_path = panel_root / "data" / "smite.db"
-            if db_path.exists():
-                shutil.copy2(db_path, backup_dir / "smite.db")
+            if data_dir.exists():
+                shutil.copytree(data_dir, backup_dir / "data", dirs_exist_ok=True)
+                logger.info(f"Backed up data folder from: {data_dir}")
             
-            env_paths = [
-                Path("/opt/smite") / ".env",
-                Path("/opt") / ".env",
-                panel_root / ".env",
-                panel_root.parent / ".env",
-                Path(os.getcwd()) / ".env",
-                Path(os.getcwd()).parent / ".env",
-            ]
-            for env_path in env_paths:
-                if env_path.exists() and env_path.is_file():
-                    shutil.copy2(env_path, backup_dir / ".env")
-                    logger.info(f"Backed up .env from: {env_path}")
-                    break
-            
-            docker_compose_paths = [
-                Path("/opt/smite") / "docker-compose.yml",
-                Path("/opt") / "docker-compose.yml",
-                panel_root / "docker-compose.yml",
-                panel_root.parent / "docker-compose.yml",
-                Path(os.getcwd()) / "docker-compose.yml",
-                Path(os.getcwd()).parent / "docker-compose.yml",
-            ]
-            for docker_compose in docker_compose_paths:
-                if docker_compose.exists() and docker_compose.is_file():
-                    shutil.copy2(docker_compose, backup_dir / "docker-compose.yml")
-                    logger.info(f"Backed up docker-compose.yml from: {docker_compose}")
-                    break
+            panel_root = data_dir.parent if data_dir.exists() else Path("/opt/smite/panel")
+            if not (panel_root / "certs").exists():
+                panel_root = Path(os.getcwd())
+                if not (panel_root / "certs").exists():
+                    for possible_root in [Path("/opt/smite"), Path(__file__).parent.parent.parent]:
+                        if (possible_root / "certs").exists():
+                            panel_root = possible_root
+                            break
             
             certs_dir = panel_root / "certs"
             if certs_dir.exists():
@@ -507,13 +491,6 @@ Use buttons in messages to interact with nodes and tunnels."""
             if server_key_path.exists():
                 (backup_dir / "server_certs").mkdir(exist_ok=True)
                 shutil.copy2(server_key_path, backup_dir / "server_certs" / "ca-server.key")
-            
-            data_dir = panel_root / "data"
-            if data_dir.exists():
-                (backup_dir / "data").mkdir(exist_ok=True)
-                for item in data_dir.iterdir():
-                    if item.is_file() and item.suffix in ['.json', '.yaml', '.toml']:
-                        shutil.copy2(item, backup_dir / "data" / item.name)
             
             from app.config import settings
             if settings.https_enabled and settings.panel_domain:

@@ -51,7 +51,8 @@
 sudo bash -c "$(curl -sL https://raw.githubusercontent.com/zZedix/Smite/main/scripts/install.sh)"
 ```
 
-### Manual Install
+<details>
+<summary><strong>Manual Install</strong></summary>
 
 1. Clone the repository:
 ```bash
@@ -82,6 +83,8 @@ smite admin create
 ```
 
 6. Access the web interface at `http://localhost:8000`
+
+</details>
 
 ### CA Certificates
 
@@ -115,7 +118,8 @@ The installer will prompt for:
 - Node name (default: node-1)
 - Node role (iran or foreign)
 
-### Manual Install
+<details>
+<summary><strong>Manual Install</strong></summary>
 
 1. Navigate to node directory:
 ```bash
@@ -147,6 +151,8 @@ EOF
 ```bash
 docker compose up -d
 ```
+
+</details>
 
 ---
 
