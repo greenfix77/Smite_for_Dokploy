@@ -492,6 +492,29 @@ Use buttons in messages to interact with nodes and tunnels."""
                 (backup_dir / "server_certs").mkdir(exist_ok=True)
                 shutil.copy2(server_key_path, backup_dir / "server_certs" / "ca-server.key")
             
+            # Backup .env and docker-compose.yml from repo root (/opt/smite/)
+            repo_root = Path("/opt/smite")
+            if not repo_root.exists():
+                # Try to find repo root by going up from panel_root
+                if panel_root.exists() and panel_root.parent.exists():
+                    repo_root = panel_root.parent
+                else:
+                    # Fallback: try current working directory or common locations
+                    for possible_root in [Path(os.getcwd()), Path("/opt/smite")]:
+                        if (possible_root / ".env").exists() or (possible_root / "docker-compose.yml").exists():
+                            repo_root = possible_root
+                            break
+            
+            env_file = repo_root / ".env"
+            if env_file.exists():
+                shutil.copy2(env_file, backup_dir / ".env")
+                logger.info(f"Backed up .env from: {env_file}")
+            
+            compose_file = repo_root / "docker-compose.yml"
+            if compose_file.exists():
+                shutil.copy2(compose_file, backup_dir / "docker-compose.yml")
+                logger.info(f"Backed up docker-compose.yml from: {compose_file}")
+            
             from app.config import settings
             if settings.https_enabled and settings.panel_domain:
                 nginx_dir = panel_root / "nginx"
