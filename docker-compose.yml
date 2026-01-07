@@ -2,24 +2,20 @@ version: "3.9"
 
 services:
   smite-panel:
-    image: ghcr.io/zzedix/smite-panel:${SMITE_VERSION:-latest}
-    build:
-      context: .
-      dockerfile: panel/Dockerfile
+    image: ghcr.io/zzedix/smite-panel:latest
     container_name: smite-panel
     restart: unless-stopped
+    env_file:
+      - ./.env
     environment:
       - PANEL_HOST=${PANEL_HOST:-0.0.0.0}
       - DB_TYPE=${DB_TYPE:-sqlite}
       - DB_PATH=/app/data/smite.db
       - SMITE_VERSION=${SMITE_VERSION:-latest}
-    env_file:
-      - ./.env
     volumes:
       - ./panel/data:/app/data
       - ./panel/certs:/app/certs
       - ./.env:/app/config/.env:ro
-      - ./docker-compose.yml:/app/config/docker-compose.yml:ro
     ports:
       - "15432:8000" # Host port 15432 → container 8000
     networks:
@@ -31,17 +27,30 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.smite-panel.rule=Host(`${SMITE_DOMAIN:-REPLACE_DOMAIN}`)"
       - "traefik.http.routers.smite-panel.entrypoints=websecure"
       - "traefik.http.routers.smite-panel.tls.certresolver=lets-encrypt"
       - "traefik.http.services.smite-panel.loadbalancer.server.port=8000"
+
+  smite-frontend:
+    image: ghcr.io/zzedix/smite-frontend:latest
+    container_name: smite-frontend
+    restart: unless-stopped
+    depends_on:
+      - smite-panel
+    ports:
+      - "15433:80" # Host port 15433 → container 80
+    networks:
+      - smite-network
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.smite-frontend.rule=Host(`${SMITE_DOMAIN:-REPLACE_DOMAIN}`) && PathPrefix(`/`)"
+      - "traefik.http.routers.smite-frontend.entrypoints=websecure"
+      - "traefik.http.routers.smite-frontend.tls.certresolver=lets-encrypt"
+      - "traefik.http.services.smite-frontend.loadbalancer.server.port=80"
 
   nginx:
     image: nginx:alpine
@@ -65,28 +74,6 @@ services:
       - dokploy-network
     profiles:
       - https
-
-  smite-frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: smite-frontend
-    restart: unless-stopped
-    depends_on:
-      - smite-panel
-    ports:
-      - "15433:80" # Host 15433 → container 80
-    networks:
-      - smite-network
-      - dokploy-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.smite-frontend.rule=Host(`${SMITE_DOMAIN:-REPLACE_DOMAIN}`) && PathPrefix(`/`)"
-      - "traefik.http.routers.smite-frontend.entrypoints=websecure"
-      - "traefik.http.routers.smite-frontend.tls.certresolver=lets-encrypt"
-      - "traefik.http.services.smite-frontend.loadbalancer.server.port=80"
-    profiles:
-      - frontend
 
 networks:
   smite-network:
